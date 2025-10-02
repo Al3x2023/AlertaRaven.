@@ -1,0 +1,69 @@
+<section id="map-section" class="content-section">
+    <div class="section-header">
+        <h2>Mapa de Alertas</h2>
+        <div class="header-actions">
+            <button class="btn-secondary" onclick="AlertaRavenApp.refreshMap()">
+                <i class="fas fa-sync-alt"></i> Actualizar
+            </button>
+            <button id="heatmap-toggle" class="btn-primary" onclick="AlertaRavenApp.toggleHeatmap()">
+                <i class="fas fa-fire"></i> Mapa de Calor
+            </button>
+            <button id="location-filter-toggle" class="btn-info" onclick="AlertaRavenApp.toggleLocationFilter()">
+                <i class="fas fa-map-marker-alt"></i> Filtrar por Zona
+            </button>
+        </div>
+    </div>
+    <div class="card full-height">
+        <div class="card-content">
+            <div id="alerts-map" class="map-container">
+                <div id="map-loading" class="loading-spinner" style="display: none;">Cargando mapa...</div>
+                <div class="map-controls-overlay">
+                    <div class="map-legend" id="map-legend">
+                        <h4>Leyenda</h4>
+                        <div class="legend-item">
+                            <span class="legend-color critical"></span>
+                            <span>Crítico</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color high"></span>
+                            <span>Alto</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color medium"></span>
+                            <span>Medio</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color low"></span>
+                            <span>Bajo</span>
+                        </div>
+                    </div>
+                    
+                    <div class="location-filter-panel" id="location-filter-panel" style="display: none;">
+                        <h4><i class="fas fa-map-marker-alt"></i> Filtro por Zona</h4>
+                        <div class="filter-status" id="filter-status">
+                            <span class="status-text">Desactivado</span>
+                        </div>
+                        <div class="filter-controls">
+                            <label for="radius-select">Radio de búsqueda:</label>
+                            <select id="radius-select" onchange="AlertaRavenApp.updateFilterRadius()">
+                                <option value="1">1 km</option>
+                                <option value="2">2 km</option>
+                                <option value="5" selected>5 km</option>
+                                <option value="10">10 km</option>
+                                <option value="20">20 km</option>
+                            </select>
+                        </div>
+                        <div class="filter-actions">
+                            <button class="btn-small btn-primary" onclick="AlertaRavenApp.enableLocationFilter()">
+                                <i class="fas fa-crosshairs"></i> Usar Mi Ubicación
+                            </button>
+                            <button class="btn-small btn-secondary" onclick="AlertaRavenApp.disableLocationFilter()">
+                                <i class="fas fa-times"></i> Desactivar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>

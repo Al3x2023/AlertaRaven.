@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AlertaRaven — Seguridad en movimiento</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+      :root {
+        --primary: #2c3e50;
+        --secondary: #3498db;
+        --accent: #e74c3c;
+        --light: #ecf0f1;
+        --dark: #2c3e50;
+        --success: #2ecc71;
+      }
+      
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      }
+      
+      body {
+        color: #333;
+        line-height: 1.6;
+        background-color: #f9f9f9;
+      }
+      
+      .container {
+        width: 90%;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 15px;
+      }
+      
+      /* Header y navegación */
+      header {
+        background: linear-gradient(135deg, var(--primary) 0%, var(--dark) 100%);
+        color: white;
+        padding: 1rem 0;
+        position: fixed;
+        width: 100%;
+        top: 0;
+        z-index: 1000;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      
+      .header-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      
+      .logo h1 {
+        font-size: 1.8rem;
+        font-weight: 700;
+      }
+      
+      .logo i {
+        color: var(--accent);
+      }
+      
+      nav ul {
+        display: flex;
+        list-style: none;
+        gap: 2rem;
+      }
+      
+      nav a {
+        color: white;
+        text-decoration: none;
+        font-weight: 500;
+        transition: color 0.3s;
+      }
+      
+      nav a:hover {
+        color: var(--secondary);
+      }
+      
+      /* Hero Section */
+      .hero {
+        background: linear-gradient(rgba(44, 62, 80, 0.8), rgba(44, 62, 80, 0.9)), url('https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80');
+        background-size: cover;
+        background-position: center;
+        color: white;
+        text-align: center;
+        padding: 180px 0 100px;
+        margin-top: 70px;
+      }
+      
+      .hero h1 {
+        font-size: 3.5rem;
+        margin-bottom: 1rem;
+        font-weight: 800;
+      }
+      
+      .hero p {
+        font-size: 1.5rem;
+        max-width: 700px;
+        margin: 0 auto 2rem;
+      }
+      
+      .btn {
+        display: inline-block;
+        padding: 12px 30px;
+        border-radius: 50px;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        border: none;
+        font-size: 1rem;
+      }
+      
+      .btn.primary {
+        background-color: var(--accent);
+        color: white;
+        box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3);
+      }
+      
+      .btn.primary:hover {
+        background-color: #c0392b;
+        transform: translateY(-3px);
+        box-shadow: 0 6px 20px rgba(231, 76, 60, 0.4);
+      }
+      
+      .btn.secondary {
+        background-color: transparent;
+        color: white;
+        border: 2px solid white;
+      }
+      
+      .btn.secondary:hover {
+        background-color: white;
+        color: var(--primary);
+      }
+      
+      /* Features Section */
+      .section-title {
+        text-align: center;
+        margin-bottom: 3rem;
+      }
+      
+      .section-title h2 {
+        font-size: 2.5rem;
+        color: var(--primary);
+        margin-bottom: 1rem;
+        position: relative;
+        display: inline-block;
+      }
+      
+      .section-title h2:after {
+        content: '';
+        position: absolute;
+        width: 70px;
+        height: 4px;
+        background: var(--secondary);
+        bottom: -10px;
+        left: 50%;
+        transform: translateX(-50%);
+        border-radius: 2px;
+      }
+      
+      .features {
+        padding: 100px 0;
+        background-color: white;
+      }
+      
+      .features-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 2rem;
+      }
+      
+      .feature-card {
+        background: white;
+        border-radius: 10px;
+        padding: 2rem;
+        text-align: center;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        transition: transform 0.3s, box-shadow 0.3s;
+      }
+      
+      .feature-card:hover {
+        transform: translateY(-10px);
+        box-shadow: 0 15px 30px rgba(0, 0, 0, 0.1);
+      }
+      
+      .feature-icon {
+        font-size: 3rem;
+        color: var(--secondary);
+        margin-bottom: 1.5rem;
+      }
+      
+      .feature-card h3 {
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+        color: var(--primary);
+      }
+      
+      /* How it works */
+      .how-it-works {
+        padding: 100px 0;
+        background-color: var(--light);
+      }
+      
+      .steps {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 2rem;
+        margin-top: 3rem;
+      }
+      
+      .step {
+        flex: 1;
+        min-width: 250px;
+        text-align: center;
+        position: relative;
+      }
+      
+      .step-number {
+        width: 60px;
+        height: 60px;
+        background: var(--secondary);
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        font-weight: bold;
+        margin: 0 auto 1.5rem;
+      }
+      
+      .step h3 {
+        margin-bottom: 1rem;
+        color: var(--primary);
+      }
+      
+      /* Testimonials */
+      .testimonials {
+        padding: 100px 0;
+        background-color: white;
+      }
+      
+      .testimonials-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 2rem;
+      }
+      
+      .testimonial-card {
+        background: var(--light);
+        padding: 2rem;
+        border-radius: 10px;
+        position: relative;
+      }
+      
+      .testimonial-card:before {
+        content: '"';
+        font-size: 5rem;
+        color: var(--secondary);
+        opacity: 0.2;
+        position: absolute;
+        top: 10px;
+        left: 20px;
+      }
+      
+      .testimonial-text {
+        margin-bottom: 1.5rem;
+        font-style: italic;
+      }
+      
+      .testimonial-author {
+        display: flex;
+        align-items: center;
+      }
+      
+      .author-avatar {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: var(--secondary);
+        margin-right: 1rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+      }
+      
+      /* CTA Section */
+      .cta {
+        padding: 100px 0;
+        background: linear-gradient(135deg, var(--secondary) 0%, var(--primary) 100%);
+        color: white;
+        text-align: center;
+      }
+      
+      .cta h2 {
+        font-size: 2.5rem;
+        margin-bottom: 1rem;
+      }
+      
+      .cta p {
+        font-size: 1.2rem;
+        max-width: 700px;
+        margin: 0 auto 2rem;
+      }
+      
+      .btn-group {
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      
+      /* Footer */
+      footer {
+        background-color: var(--dark);
+        color: white;
+        padding: 60px 0 20px;
+      }
+      
+      .footer-content {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 2rem;
+        margin-bottom: 2rem;
+      }
+      
+      .footer-column h3 {
+        font-size: 1.2rem;
+        margin-bottom: 1.5rem;
+        position: relative;
+        padding-bottom: 10px;
+      }
+      
+      .footer-column h3:after {
+        content: '';
+        position: absolute;
+        width: 40px;
+        height: 3px;
+        background: var(--secondary);
+        bottom: 0;
+        left: 0;
+      }
+      
+      .footer-column ul {
+        list-style: none;
+      }
+      
+      .footer-column ul li {
+        margin-bottom: 0.8rem;
+      }
+      
+      .footer-column a {
+        color: #bdc3c7;
+        text-decoration: none;
+        transition: color 0.3s;
+      }
+      
+      .footer-column a:hover {
+        color: white;
+      }
+      
+      .social-links {
+        display: flex;
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+      
+      .social-links a {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+        transition: background 0.3s;
+      }
+      
+      .social-links a:hover {
+        background: var(--secondary);
+      }
+      
+      .copyright {
+        text-align: center;
+        padding-top: 2rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        color: #bdc3c7;
+        font-size: 0.9rem;
+      }
+      
+      /* Responsive */
+      @media (max-width: 768px) {
+        .header-container {
+          flex-direction: column;
+          gap: 1rem;
+        }
+        
+        nav ul {
+          gap: 1rem;
+        }
+        
+        .hero h1 {
+          font-size: 2.5rem;
+        }
+        
+        .hero p {
+          font-size: 1.2rem;
+        }
+        
+        .btn-group {
+          flex-direction: column;
+          align-items: center;
+        }
+        
+        .btn {
+          width: 100%;
+          max-width: 300px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="container header-container">
+        <div class="logo">
+          <i class="fas fa-crow"></i>
+          <h1>AlertaRaven</h1>
+        </div>
+        <nav>
+          <ul>
+            <li><a href="#features">Características</a></li>
+            <li><a href="#how-it-works">Cómo funciona</a></li>
+            <li><a href="#testimonials">Testimonios</a></li>
+            <li><a href="/login" class="btn secondary">Acceder</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <section class="hero">
+      <div class="container">
+        <h1>Seguridad en movimiento</h1>
+        <p>Detección de accidentes y alertas en tiempo real para tu tranquilidad y la de tus seres queridos.</p>
+        <div class="btn-group">
+          <a class="btn primary" href="/login">Acceder al Dashboard</a>
+          <a class="btn secondary" href="#features">Conocer más</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="features" class="features">
+      <div class="container">
+        <div class="section-title">
+          <h2>Características Principales</h2>
+          <p>Descubre cómo AlertaRaven puede brindarte seguridad en tus desplazamientos</p>
+        </div>
+        <div class="features-grid">
+          <div class="feature-card">
+            <div class="feature-icon">
+              <i class="fas fa-shield-alt"></i>
+            </div>
+            <h3>Monitoreo continuo</h3>
+            <p>Servicio en primer plano para detectar incidentes automáticamente, incluso cuando la app está en segundo plano.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <i class="fas fa-users"></i>
+            </div>
+            <h3>Contactos de emergencia</h3>
+            <p>Sincronización segura entre móvil y servidor para alertar inmediatamente a tus contactos en caso de emergencia.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <i class="fas fa-map-marked-alt"></i>
+            </div>
+            <h3>Dashboard web</h3>
+            <p>Visualiza alertas, mapa en tiempo real y estadísticas detalladas desde cualquier dispositivo con conexión a internet.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <i class="fas fa-bell"></i>
+            </div>
+            <h3>Alertas inmediatas</h3>
+            <p>Notificaciones instantáneas a tus contactos con tu ubicación exacta en caso de detectar un accidente.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <i class="fas fa-chart-line"></i>
+            </div>
+            <h3>Análisis de datos</h3>
+            <p>Estadísticas detalladas de tus desplazamientos y patrones de conducción para mejorar tu seguridad.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <i class="fas fa-mobile-alt"></i>
+            </div>
+            <h3>Interfaz intuitiva</h3>
+            <p>Diseño fácil de usar que te permite configurar y gestionar tu seguridad en pocos minutos.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="how-it-works" class="how-it-works">
+      <div class="container">
+        <div class="section-title">
+          <h2>Cómo Funciona</h2>
+          <p>En tres simples pasos, AlertaRaven te protege a ti y a tus seres queridos</p>
+        </div>
+        <div class="steps">
+          <div class="step">
+            <div class="step-number">1</div>
+            <h3>Descarga y Configura</h3>
+            <p>Instala la aplicación en tu smartphone y configura tus contactos de emergencia en menos de 5 minutos.</p>
+          </div>
+          <div class="step">
+            <div class="step-number">2</div>
+            <h3>Activa el Monitoreo</h3>
+            <p>Al iniciar tu desplazamiento, activa el monitoreo. La app detectará automáticamente posibles incidentes.</p>
+          </div>
+          <div class="step">
+            <div class="step-number">3</div>
+            <h3>Viaja Tranquilo</h3>
+            <p>Si ocurre un incidente, AlertaRaven enviará automáticamente alertas a tus contactos con tu ubicación.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="testimonials" class="testimonials">
+      <div class="container">
+        <div class="section-title">
+          <h2>Lo Que Dicen Nuestros Usuarios</h2>
+          <p>Experiencias reales de personas que confían en AlertaRaven</p>
+        </div>
+        <div class="testimonials-grid">
+          <div class="testimonial-card">
+            <div class="testimonial-text">
+              "Gracias a AlertaRaven, mi familia tiene tranquilidad cuando viajo solo por trabajo. La aplicación detectó una caída de mi moto y alertó a mi esposa inmediatamente."
+            </div>
+            <div class="testimonial-author">
+              <div class="author-avatar">JL</div>
+              <div>
+                <h4>Juan López</h4>
+                <p>Usuario desde 2024</p>
+              </div>
+            </div>
+          </div>
+          <div class="testimonial-card">
+            <div class="testimonial-text">
+              "Como madre, me da mucha seguridad saber que si mis hijos adolescentes tienen un accidente mientras conducen, recibiré una alerta inmediata con su ubicación exacta."
+            </div>
+            <div class="testimonial-author">
+              <div class="author-avatar">MG</div>
+              <div>
+                <h4>María González</h4>
+                <p>Usuario desde 2023</p>
+              </div>
+            </div>
+          </div>
+          <div class="testimonial-card">
+            <div class="testimonial-text">
+              "La integración con el dashboard web es excelente. Puedo ver los desplazamientos de mi flota de repartidores y recibir alertas en caso de incidentes."
+            </div>
+            <div class="testimonial-author">
+              <div class="author-avatar">CR</div>
+              <div>
+                <h4>Carlos Rodríguez</h4>
+                <p>Empresa de logística</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="container">
+        <h2>Comienza a proteger tus desplazamientos hoy</h2>
+        <p>Únete a miles de usuarios que ya confían en AlertaRaven para su seguridad y la de sus seres queridos.</p>
+        <div class="btn-group">
+          <a class="btn primary" href="/login">Acceder al Dashboard</a>
+          <a class="btn secondary" href="#">Descargar la App</a>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="container">
+        <div class="footer-content">
+          <div class="footer-column">
+            <h3>AlertaRaven</h3>
+            <p>Tu seguridad es nuestra prioridad. Tecnología avanzada para protegerte en cada desplazamiento.</p>
+            <div class="social-links">
+              <a href="#"><i class="fab fa-facebook-f"></i></a>
+              <a href="#"><i class="fab fa-twitter"></i></a>
+              <a href="#"><i class="fab fa-instagram"></i></a>
+              <a href="#"><i class="fab fa-linkedin-in"></i></a>
+            </div>
+          </div>
+          <div class="footer-column">
+            <h3>Enlaces Rápidos</h3>
+            <ul>
+              <li><a href="#features">Características</a></li>
+              <li><a href="#how-it-works">Cómo funciona</a></li>
+              <li><a href="#testimonials">Testimonios</a></li>
+              <li><a href="/login">Acceder</a></li>
+            </ul>
+          </div>
+          <div class="footer-column">
+            <h3>Legal</h3>
+            <ul>
+              <li><a href="#">Términos de servicio</a></li>
+              <li><a href="#">Política de privacidad</a></li>
+              <li><a href="#">Cookies</a></li>
+              <li><a href="#">Aviso legal</a></li>
+            </ul>
+          </div>
+          <div class="footer-column">
+            <h3>Contacto</h3>
+            <ul>
+              <li><i class="fas fa-envelope"></i> info@alertaraven.com</li>
+              <li><i class="fas fa-phone"></i> +34 900 123 456</li>
+              <li><i class="fas fa-map-marker-alt"></i> Madrid, España</li>
+            </ul>
+          </div>
+        </div>
+        <div class="copyright">
+          <p>&copy; 2025 AlertaRaven. Todos los derechos reservados.</p>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

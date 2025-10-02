@@ -1,0 +1,118 @@
+<section id="alerts-section" class="content-section">
+    <div class="section-header">
+        <h2>Gestión de Alertas</h2>
+        <div class="header-actions">
+            <button class="btn-primary" onclick="AlertaRavenApp.exportAlerts()">
+                <i class="fas fa-download"></i> Exportar
+            </button>
+        </div>
+    </div>
+
+    <!-- Filtros Avanzados -->
+    <div class="filters-section">
+        <div class="card">
+            <div class="card-header">
+                <h3>Filtros</h3>
+                <button class="btn-clear-filters" onclick="AlertaRavenApp.clearFilters()">
+                    <i class="fas fa-times"></i> Limpiar
+                </button>
+            </div>
+            <div class="card-content">
+                <div class="filters-grid">
+                    <div class="filter-group">
+                        <label for="date-filter">Fecha</label>
+                        <select id="date-filter" onchange="AlertaRavenApp.applyFilters()">
+                            <option value="">Todas</option>
+                            <option value="today">Hoy</option>
+                            <option value="yesterday">Ayer</option>
+                            <option value="week">Última semana</option>
+                            <option value="month">Último mes</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="type-filter">Tipo de Accidente</label>
+                        <select id="type-filter" onchange="AlertaRavenApp.applyFilters()">
+                            <option value="">Todos</option>
+                            <option value="COLLISION">Colisión</option>
+                            <option value="FALL">Caída</option>
+                            <option value="MEDICAL">Médica</option>
+                            <option value="FIRE">Incendio</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="status-filter">Estado</label>
+                        <select id="status-filter" onchange="AlertaRavenApp.applyFilters()">
+                            <option value="">Todos</option>
+                            <option value="PENDING">Pendiente</option>
+                            <option value="IN_PROGRESS">En Progreso</option>
+                            <option value="COMPLETED">Completado</option>
+                            <option value="CANCELLED">Cancelado</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="search-filter">Búsqueda</label>
+                        <input type="text" id="search-filter" placeholder="Buscar por ID, usuario..." onkeyup="AlertaRavenApp.applyFilters()">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabla de Alertas Avanzada -->
+        <div class="card alerts-table-container">
+            <div class="card-header">
+                <h3>Todas las Alertas</h3>
+                <div class="table-controls">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="table-search" placeholder="Buscar alertas..." oninput="AlertaRavenApp.searchAlertsTable()">
+                    </div>
+                    <select id="table-sort" onchange="AlertaRavenApp.sortAlertsTable()">
+                        <option value="timestamp-desc">Más recientes</option>
+                        <option value="timestamp-asc">Más antiguas</option>
+                        <option value="id-desc">ID descendente</option>
+                        <option value="id-asc">ID ascendente</option>
+                        <option value="type-asc">Tipo A-Z</option>
+                        <option value="type-desc">Tipo Z-A</option>
+                        <option value="status-asc">Estado A-Z</option>
+                        <option value="status-desc">Estado Z-A</option>
+                    </select>
+                    <div class="table-info">
+                        Mostrando <span id="table-count">0</span> de <span id="table-total">0</span> alertas
+                    </div>
+                </div>
+            </div>
+            <div class="card-content">
+                <div class="table-wrapper">
+                    <table class="alerts-table">
+                        <thead>
+                            <tr>
+                                <th onclick="AlertaRavenApp.sortTableBy('id')" style="cursor: pointer;">
+                                    ID <i class="fas fa-sort"></i>
+                                </th>
+                                <th onclick="AlertaRavenApp.sortTableBy('timestamp')" style="cursor: pointer;">
+                                    Fecha/Hora <i class="fas fa-sort"></i>
+                                </th>
+                                <th onclick="AlertaRavenApp.sortTableBy('type')" style="cursor: pointer;">
+                                    Tipo <i class="fas fa-sort"></i>
+                                </th>
+                                <th onclick="AlertaRavenApp.sortTableBy('status')" style="cursor: pointer;">
+                                    Estado <i class="fas fa-sort"></i>
+                                </th>
+                                <th onclick="AlertaRavenApp.sortTableBy('location')" style="cursor: pointer;">
+                                    Ubicación <i class="fas fa-sort"></i>
+                                </th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="alerts-table-body">
+                            <!-- Las alertas se cargarán aquí -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination" id="alerts-pagination">
+                    <!-- La paginación se generará aquí -->
+                </div>
+            </div>
+        </div>
+    </div>
+</section>

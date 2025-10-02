@@ -1,0 +1,47 @@
+<!-- Alert Detail Modal -->
+<div id="alert-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Detalles de la Alerta</h3>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="alert-details">
+            <!-- Detalles de la alerta se cargarán aquí -->
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeModal()">Cerrar</button>
+            <button class="btn-primary" id="update-status-btn" onclick="showStatusUpdate()">
+                Actualizar Estado
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Status Update Modal -->
+<div id="status-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Actualizar Estado de Alerta</h3>
+            <button class="modal-close" onclick="closeStatusModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="new-status">Nuevo Estado</label>
+                <select id="new-status">
+                    <option value="PENDING">Pendiente</option>
+                    <option value="IN_PROGRESS">En Progreso</option>
+                    <option value="COMPLETED">Completado</option>
+                    <option value="CANCELLED">Cancelado</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="status-notes">Notas</label>
+                <textarea id="status-notes" placeholder="Agregar notas sobre el cambio de estado..."></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeStatusModal()">Cancelar</button>
+            <button class="btn-primary" onclick="updateAlertStatus()">Actualizar</button>
+        </div>
+    </div>
+</div>

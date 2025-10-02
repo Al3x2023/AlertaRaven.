@@ -1,0 +1,113 @@
+<section id="system-section" class="content-section">
+    <div class="section-header">
+        <h2>Estado del Sistema</h2>
+        <div class="header-actions">
+            <button class="btn-primary" onclick="restartServices()">
+                <i class="fas fa-redo"></i> Reiniciar Servicios
+            </button>
+        </div>
+    </div>
+    
+    <div class="system-status-grid">
+        <div class="status-card">
+            <div class="status-header">
+                <h3>Servidor</h3>
+                <div class="status-indicator" id="server-status">
+                    <span class="status-dot online"></span>
+                    <span class="status-text">En línea</span>
+                </div>
+            </div>
+            <div class="status-details">
+                <p>Tiempo activo: <span id="server-uptime">--</span></p>
+                <p>CPU: <span id="server-cpu">--</span>%</p>
+                <p>Memoria: <span id="server-memory">--</span>%</p>
+            </div>
+        </div>
+
+        <div class="status-card">
+            <div class="status-header">
+                <h3>Base de Datos</h3>
+                <div class="status-indicator" id="db-status">
+                    <span class="status-dot online"></span>
+                    <span class="status-text">Conectada</span>
+                </div>
+            </div>
+            <div class="status-details">
+                <p>Conexiones: <span id="db-connections">--</span></p>
+                <p>Consultas/min: <span id="db-queries">--</span></p>
+                <p>Latencia: <span id="db-latency">--</span>ms</p>
+            </div>
+        </div>
+
+        <div class="status-card">
+            <div class="status-header">
+                <h3>WebSocket</h3>
+                <div class="status-indicator" id="ws-status">
+                    <span class="status-dot online"></span>
+                    <span class="status-text">Conectado</span>
+                </div>
+            </div>
+            <div class="status-details">
+                <p>Conexiones activas: <span id="ws-connections">--</span></p>
+                <p>Mensajes/min: <span id="ws-messages">--</span></p>
+                <p>Última actividad: <span id="ws-last-activity">--</span></p>
+            </div>
+        </div>
+
+        <div class="status-card">
+            <div class="status-header">
+                <h3>API</h3>
+                <div class="status-indicator" id="api-status">
+                    <span class="status-dot online"></span>
+                    <span class="status-text">Operativa</span>
+                </div>
+            </div>
+            <div class="status-details">
+                <p>Requests/min: <span id="api-requests">--</span></p>
+                <p>Tiempo respuesta: <span id="api-response-time">--</span>ms</p>
+                <p>Errores: <span id="api-errors">--</span></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gráfico de rendimiento del sistema -->
+    <div class="performance-chart-container">
+        <div class="card">
+            <div class="card-header">
+                <h3>Rendimiento del Sistema (Últimas 24h)</h3>
+            </div>
+            <div class="card-content">
+                <canvas id="performance-chart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Logs del sistema -->
+    <div class="system-logs">
+        <div class="card">
+            <div class="card-header">
+                <h3>Logs del Sistema</h3>
+                <div class="logs-controls">
+                    <select id="log-level">
+                        <option value="all">Todos los niveles</option>
+                        <option value="error">Errores</option>
+                        <option value="warning">Advertencias</option>
+                        <option value="info">Información</option>
+                    </select>
+                    <button onclick="clearLogs()" class="btn-clear">Limpiar</button>
+                    <button onclick="refreshLogs()" class="btn-refresh">
+                        <i class="fas fa-sync-alt"></i> Actualizar
+                    </button>
+                    <button onclick="exportLogs()" class="btn-secondary">
+                        <i class="fas fa-download"></i> Exportar
+                    </button>
+                </div>
+            </div>
+            <div class="card-content">
+                <div class="logs-container" id="system-logs-container">
+                    <!-- Logs dinámicos -->
+                </div>
+            </div>
+        </div>
+    </div>
+</section>

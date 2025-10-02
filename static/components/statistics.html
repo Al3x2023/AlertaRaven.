@@ -1,0 +1,76 @@
+<section id="statistics-section" class="content-section">
+    <div class="section-header">
+        <h2>Estadísticas Detalladas</h2>
+        <div class="header-actions">
+            <button class="btn-primary" onclick="generateReport()">
+                <i class="fas fa-file-pdf"></i> Generar Reporte
+            </button>
+        </div>
+    </div>
+    
+    <div class="stats-detailed-grid">
+        <div class="card">
+            <div class="card-header">
+                <h3>Estadísticas por Estado</h3>
+            </div>
+            <div class="card-content">
+                <div id="status-stats" class="stats-list">
+                    <!-- Estadísticas por estado -->
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h3>Estadísticas por Tipo de Accidente</h3>
+            </div>
+            <div class="card-content">
+                <div id="type-stats" class="stats-list">
+                    <!-- Estadísticas por tipo -->
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h3>Métricas de Tiempo</h3>
+            </div>
+            <div class="card-content">
+                <div class="time-metrics">
+                    <div class="time-metric">
+                        <span class="metric-value" id="avg-response-time-stat">0 min</span>
+                        <span class="metric-label">Tiempo promedio de respuesta</span>
+                    </div>
+                    <div class="time-metric">
+                        <span class="metric-value" id="avg-resolution-time">0 min</span>
+                        <span class="metric-label">Tiempo promedio de resolución</span>
+                    </div>
+                    <div class="time-metric">
+                        <span class="metric-value" id="peak-hours">14:00-16:00</span>
+                        <span class="metric-label">Horas pico de alertas</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h3>Distribución Geográfica</h3>
+            </div>
+            <div class="card-content">
+                <div id="geographic-stats" class="geo-stats">
+                    <!-- Estadísticas geográficas -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gráficos de tendencias -->
+    <div class="trends-section">
+        <div class="card">
+            <div class="card-header">
+                <h3>Tendencias Mensuales</h3>
+            </div>
+            <div class="card-content">
+                <canvas id="monthly-trends-chart"></canvas>
+            </div>
+        </div>
+    </div>
+</section>

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlertaRaven - Dashboard de Monitoreo</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Chart.js para gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Leaflet para mapas -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar se cargará aquí -->
+        <div id="sidebar-component"></div>
+        
+        <main class="main-content">
+            <!-- Header se cargará aquí -->
+            <div id="header-component"></div>
+            
+            <!-- Secciones de contenido -->
+            <div id="dashboard-component"></div>
+            <div id="alerts-component"></div>
+            <div id="map-component"></div>
+            <div id="statistics-component"></div>
+            <div id="system-component"></div>
+        </main>
+    </div>
+
+    <!-- Modales y notificaciones -->
+    <div id="modals-component"></div>
+    <div id="notifications-component"></div>
+
+    <!-- Cargador de componentes -->
+    <script src="/static/components-loader.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+</html>
