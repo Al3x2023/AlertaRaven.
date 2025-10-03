@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: alertaraven-api
+    env: docker
+    dockerfilePath: Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: ALERTA_DB_PATH
+        value: /var/data/alertas.db
+      - key: ALERTA_API_KEYS
+        value: alertaraven_mobile_key_2024
+      - key: ALERTA_STATIC_DIR
+        value: /app/static
+    disk:
+      name: api-data
+      mountPath: /var/data
+      sizeGB: 1
+
+  - type: web
+    name: alertaraven-pos
+    env: docker
+    dockerfilePath: pos_service/Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: POS_DATA_PATH
+        value: /var/data/sales.json
+    disk:
+      name: pos-data
+      mountPath: /var/data
+      sizeGB: 1
