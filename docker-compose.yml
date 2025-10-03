@@ -1,0 +1,36 @@
+services:
+  api:
+    build: .
+    container_name: alertaraven_api
+    ports:
+      - "8000:8000"
+    environment:
+      - ALERTA_DB_PATH=/data/alertas.db
+      - ALERTA_API_KEYS=alertaraven_mobile_key_2024
+      - ALERTARAVEN_WEB_SECRET=dev_secret
+      - ALERTARAVEN_ADMIN_USER=admin
+      - ALERTARAVEN_ADMIN_PASS=admin
+      - ALERTA_STATIC_DIR=/app/static
+    volumes:
+      - ./data:/data
+      - ./static:/app/static:ro
+    restart: unless-stopped
+
+  pos:
+    build:
+      context: ./pos_service
+    container_name: alertaraven_pos
+    ports:
+      - "9000:9000"
+    environment:
+      - POS_PORT=9000
+      - POS_DATA_PATH=/data/sales.json
+    volumes:
+      - ./pos_data:/data
+    restart: unless-stopped
+
+# Futuro: separar en microservicios
+#  - worker: procesar alertas en background
+#  - websocket: gestión de conexiones en tiempo real
+#  - metrics: agregación y reporting
+# Este compose deja listo el volumen y entorno para esa evolución.

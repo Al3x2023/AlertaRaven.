@@ -90,8 +90,7 @@ class EmergencyAlert(BaseModel):
     # Datos adicionales
     additional_data: Optional[Dict[str, Any]] = Field(None, description="Datos adicionales")
     
-    class Config:
-        pass
+    # Removido Config basado en clase para compatibilidad con Pydantic v2
 
 class AlertStatistics(BaseModel):
     """Estadísticas de alertas"""

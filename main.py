@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, JSON
 from fastapi import Request
 from jose import jwt, JWTError
 from pydantic import BaseModel, Field
+from contextlib import asynccontextmanager, suppress
 
 from models import *
 from database import Database
@@ -22,10 +23,25 @@ from websocket_manager import WebSocketManager, heartbeat_task
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Inicializar la base de datos y tareas de background
+    await db.init_db()
+    hb_task = asyncio.create_task(heartbeat_task())
+    try:
+        yield
+    finally:
+        await db.close()
+        hb_task.cancel()
+        # Suprimir CancelledError al cerrar la tarea
+        with suppress(asyncio.CancelledError):
+            await hb_task
+
 app = FastAPI(
     title="AlertaRaven API",
     description="API para recibir y gestionar alertas de emergencia de la aplicación AlertaRaven",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Configurar CORS
@@ -38,12 +54,15 @@ app.add_middleware(
 )
 
 # Inicializar componentes
-db = Database()
+DB_PATH = os.getenv("ALERTA_DB_PATH", "alertas.db")
+db = Database(DB_PATH)
 websocket_manager = WebSocketManager()
 
 # Configuración de autenticación
 security = HTTPBearer()
-VALID_API_KEYS = {"alertaraven_mobile_key_2024"}  # En producción usar variables de entorno
+# Leer API keys de entorno (coma-separadas)
+_api_keys_env = os.getenv("ALERTA_API_KEYS", "alertaraven_mobile_key_2024")
+VALID_API_KEYS = {k.strip() for k in _api_keys_env.split(",") if k.strip()}
 
 def get_api_key(api_key: str):
     return api_key in VALID_API_KEYS
@@ -142,19 +161,7 @@ class SensorEventIn(BaseModel):
     timestamp: Optional[str] = None
     raw_data: Optional[Dict[str, Any]] = None
 
-@app.on_event("startup")
-async def startup_event():
-    """Inicializar la base de datos al arrancar"""
-    await db.init_db()
-    # Iniciar tarea de heartbeat para WebSockets
-    asyncio.create_task(heartbeat_task())
-    logger.info("API AlertaRaven iniciada correctamente")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Limpiar recursos al cerrar"""
-    await db.close()
-    logger.info("API AlertaRaven cerrada correctamente")
+# Eventos de ciclo de vida migrados a `lifespan` arriba
 
 @app.get("/")
 async def root():
@@ -497,8 +504,9 @@ async def export_sensor_events_csv(
 # ENDPOINTS PARA APLICACIÓN WEB
 # ================================
 
-# Configurar archivos estáticos
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Configurar archivos estáticos (configurable por env)
+STATIC_DIR = os.getenv("ALERTA_STATIC_DIR", "static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
