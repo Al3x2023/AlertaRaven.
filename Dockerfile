@@ -31,5 +31,4 @@ ENV ALERTA_DB_PATH=/data/alertas.db \
 
 EXPOSE 8000
 
-# Render establece la variable PORT; usa 8000 por defecto local
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
