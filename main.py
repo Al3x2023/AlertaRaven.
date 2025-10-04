@@ -54,15 +54,12 @@ app.add_middleware(
 )
 
 # Inicializar componentes
-DB_PATH = os.getenv("ALERTA_DB_PATH", "alertas.db")
-db = Database(DB_PATH)
+db = Database()
 websocket_manager = WebSocketManager()
 
 # Configuración de autenticación
 security = HTTPBearer()
-# Leer API keys de entorno (coma-separadas)
-_api_keys_env = os.getenv("ALERTA_API_KEYS", "alertaraven_mobile_key_2024")
-VALID_API_KEYS = {k.strip() for k in _api_keys_env.split(",") if k.strip()}
+VALID_API_KEYS = {"alertaraven_mobile_key_2024"}  # En producción usar variables de entorno
 
 def get_api_key(api_key: str):
     return api_key in VALID_API_KEYS
@@ -504,9 +501,8 @@ async def export_sensor_events_csv(
 # ENDPOINTS PARA APLICACIÓN WEB
 # ================================
 
-# Configurar archivos estáticos (configurable por env)
-STATIC_DIR = os.getenv("ALERTA_STATIC_DIR", "static")
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# Configurar archivos estáticos
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
