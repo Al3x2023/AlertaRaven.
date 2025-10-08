@@ -7,6 +7,8 @@ import os
 
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, JSONResponse
@@ -62,6 +64,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Compresión de respuestas grandes
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+# Cacheo agresivo para assets estáticos y control fino para SW/manifest
+class StaticCacheMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        try:
+            if path.startswith("/static/"):
+                # Cache fuerte para assets estáticos (CSS/JS/imagenes)
+                response.headers["Cache-Control"] = "public, max-age=604800, immutable"
+            elif path == "/manifest.webmanifest":
+                # Manifest debe actualizarse con frecuencia
+                response.headers["Cache-Control"] = "no-cache"
+            elif path == "/sw.js":
+                # Service Worker debe actualizarse inmediatamente
+                response.headers["Cache-Control"] = "no-cache"
+        except Exception:
+            # En caso de respuestas sin headers mutables, ignorar
+            pass
+        return response
+
+app.add_middleware(StaticCacheMiddleware)
 
 # Inicializar componentes
 db = Database()
@@ -749,7 +776,8 @@ async def get_alerts(
     """Obtener lista de alertas con filtros opcionales"""
     try:
         alerts = await db.get_alerts(status=status, accident_type=accident_type, limit=limit, offset=offset)
-        return alerts
+        # Convertir modelos a dict para cumplir con response_model=List[Dict[str, Any]]
+        return [a.dict() for a in alerts]
     except Exception as e:
         logger.error(f"Error obteniendo alertas: {e}")
         raise HTTPException(status_code=500, detail="Error interno del servidor")

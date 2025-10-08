@@ -47,7 +47,7 @@
       // Registro del Service Worker
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
+          navigator.serviceWorker.register('/sw.js', { scope: '/' })
             .then(reg => console.log('✅ Service Worker registrado:', reg.scope))
             .catch(err => console.error('❌ Error registrando Service Worker:', err));
         });

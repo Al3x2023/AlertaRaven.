@@ -196,10 +196,25 @@ const AlertaRavenApp = (function() {
             const appServerKey = urlBase64ToUint8Array(data.key);
 
             if (!subscription) {
-                subscription = await registration.pushManager.subscribe({
-                    userVisibleOnly: true,
-                    applicationServerKey: appServerKey
-                });
+                try {
+                    subscription = await registration.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: appServerKey
+                    });
+                } catch (err) {
+                    if (err && err.name === 'AbortError') {
+                        console.warn('AbortError en subscribe: reintentando tras re-registro del SW');
+                        // Forzar re-registro del SW y reintentar
+                        await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+                        const reg2 = await navigator.serviceWorker.ready;
+                        subscription = await reg2.pushManager.subscribe({
+                            userVisibleOnly: true,
+                            applicationServerKey: appServerKey
+                        });
+                    } else {
+                        throw err;
+                    }
+                }
             }
 
             // Enviar suscripción al backend
@@ -219,6 +234,11 @@ const AlertaRavenApp = (function() {
             console.log('✅ Suscripción push registrada correctamente');
         } catch (err) {
             console.error('❌ Error inicializando notificaciones push:', err);
+            if (err && err.name === 'NotAllowedError') {
+                showErrorNotification && showErrorNotification('Permiso de notificaciones denegado. Habilítalo y recarga.');
+            } else if (err && err.name === 'AbortError') {
+                showErrorNotification && showErrorNotification('El servicio push no está disponible en este navegador/origen. Usa localhost o habilita notificaciones del sistema.');
+            }
         }
     }
 
