@@ -139,10 +139,11 @@ body {
 
 /* Imagen de logo en sidebar */
 .logo-image {
-    width: 32px;
-    height: 32px;
+    width: 50px;
+    height: 50px;
     object-fit: contain;
     border-radius: var(--radius-sm);
+    filter: brightness(0) invert(1);
 }
 
 .sidebar.collapsed .logo span {
