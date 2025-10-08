@@ -116,7 +116,6 @@ const AlertaRavenApp = (function() {
         initializeSystemPanel();
         
         startPeriodicUpdates();
-        initPushNotifications();
         
         state.componentsReady = true;
         console.log('✅ AlertaRaven App inicializada correctamente');
@@ -142,104 +141,6 @@ const AlertaRavenApp = (function() {
         }
         
         return true;
-    }
-
-    // =============================
-    // Notificaciones Push (PWA)
-    // =============================
-    function urlBase64ToUint8Array(base64String) {
-        const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-        const base64 = (base64String + padding)
-            .replace(/-/g, '+')
-            .replace(/_/g, '/');
-        const rawData = window.atob(base64);
-        const outputArray = new Uint8Array(rawData.length);
-        for (let i = 0; i < rawData.length; ++i) {
-            outputArray[i] = rawData.charCodeAt(i);
-        }
-        return outputArray;
-    }
-
-    function arrayBufferToBase64Url(buffer) {
-        const bytes = new Uint8Array(buffer);
-        let binary = '';
-        for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        const base64 = window.btoa(binary);
-        return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    }
-
-    async function initPushNotifications() {
-        try {
-            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-                console.warn('Push/ServiceWorker no soportado en este navegador');
-                return;
-            }
-
-            // Solicitar permiso de notificación
-            let permission = Notification.permission;
-            if (permission !== 'granted') {
-                permission = await Notification.requestPermission();
-            }
-            if (permission !== 'granted') {
-                console.warn('Permiso de notificaciones no concedido');
-                return;
-            }
-
-            const registration = await navigator.serviceWorker.ready;
-            let subscription = await registration.pushManager.getSubscription();
-
-            // Obtener clave pública VAPID del servidor
-            const resp = await fetch('/api/push/vapid-public-key');
-            const data = await resp.json();
-            const appServerKey = urlBase64ToUint8Array(data.key);
-
-            if (!subscription) {
-                try {
-                    subscription = await registration.pushManager.subscribe({
-                        userVisibleOnly: true,
-                        applicationServerKey: appServerKey
-                    });
-                } catch (err) {
-                    if (err && err.name === 'AbortError') {
-                        console.warn('AbortError en subscribe: reintentando tras re-registro del SW');
-                        // Forzar re-registro del SW y reintentar
-                        await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-                        const reg2 = await navigator.serviceWorker.ready;
-                        subscription = await reg2.pushManager.subscribe({
-                            userVisibleOnly: true,
-                            applicationServerKey: appServerKey
-                        });
-                    } else {
-                        throw err;
-                    }
-                }
-            }
-
-            // Enviar suscripción al backend
-            const payload = {
-                endpoint: subscription.endpoint,
-                keys: {
-                    p256dh: arrayBufferToBase64Url(subscription.getKey('p256dh')),
-                    auth: arrayBufferToBase64Url(subscription.getKey('auth'))
-                }
-            };
-            await fetch('/api/push/subscribe', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            console.log('✅ Suscripción push registrada correctamente');
-        } catch (err) {
-            console.error('❌ Error inicializando notificaciones push:', err);
-            if (err && err.name === 'NotAllowedError') {
-                showErrorNotification && showErrorNotification('Permiso de notificaciones denegado. Habilítalo y recarga.');
-            } else if (err && err.name === 'AbortError') {
-                showErrorNotification && showErrorNotification('El servicio push no está disponible en este navegador/origen. Usa localhost o habilita notificaciones del sistema.');
-            }
-        }
     }
 
     // Configuración de navegación
@@ -323,15 +224,7 @@ const AlertaRavenApp = (function() {
                 loadAlertsTable();
                 break;
             case 'map':
-                // Inicializar si no existe y ajustar tamaño tras mostrar
-                if (!state.map) {
-                    initializeMap();
-                } else {
-                    loadMapData();
-                }
-                setTimeout(() => {
-                    try { state.map && state.map.invalidateSize(); } catch (e) {}
-                }, 100);
+                loadMapData();
                 break;
             case 'statistics':
                 loadStatisticsData();
@@ -385,16 +278,21 @@ const AlertaRavenApp = (function() {
 
     function handleWebSocketMessage(data) {
         console.log('📨 Mensaje WebSocket recibido:', data);
+        // El backend envía la carga útil en 'data'; mantener compatibilidad con 'alert' si existiera
+        const payload = data.data || data.alert || data;
         
-        switch(data.type) {
+        switch (data.type) {
             case 'new_alert':
-                handleNewAlert(data.alert);
+                // Notificación de nueva alerta enviada desde el backend
+                handleNewAlert(payload);
                 break;
-            case 'alert_updated':
-                handleAlertUpdated(data.alert);
+            case 'alert_status_change':
+                // Cambio de estado de alerta (backend usa 'alert_status_change')
+                handleAlertUpdated(payload);
                 break;
             case 'system_status':
-                handleSystemStatus(data.status);
+                // Estado del sistema viene en 'data' { status, message }
+                handleSystemStatus(payload);
                 break;
             default:
                 console.log('📨 Tipo de mensaje no manejado:', data.type);
@@ -425,11 +323,28 @@ const AlertaRavenApp = (function() {
             state.currentAlerts[index] = alert;
         }
         
+        // Refrescar estadísticas y lista para reflejar cambios inmediatos
+        loadInitialData();
+
         // Actualizar interfaz
         if (state.currentSection === 'alerts') {
             loadAlertsTable();
         } else {
             updateRecentAlertsDisplay(state.currentAlerts);
+        }
+    }
+
+    // Manejo básico de estado del sistema recibido por WebSocket
+    function handleSystemStatus(statusInfo) {
+        try {
+            const msg = statusInfo && statusInfo.message ? statusInfo.message : 'Actualización de sistema';
+            showNotification(`🔧 ${msg}`, 'info');
+            // Podríamos refrescar panel del sistema si está visible
+            if (state.currentSection === 'system') {
+                updateSystemStatus();
+            }
+        } catch (e) {
+            console.warn('⚠️ Error manejando system_status:', e);
         }
     }
 
@@ -1268,10 +1183,6 @@ function loadSampleData() {
             }).addTo(state.map);
 
             updateMapMarkers();
-            // Ajuste de tamaño tras inicialización para evitar cortes
-            setTimeout(() => {
-                try { state.map.invalidateSize(); } catch (e) {}
-            }, 150);
             console.log('🗺️ Mapa inicializado correctamente');
         } catch (error) {
             console.error('❌ Error inicializando mapa:', error);
@@ -1673,10 +1584,6 @@ function loadSampleData() {
             }).addTo(state.dashboardMap);
 
             updateDashboardMapMarkers();
-            // Ajuste de tamaño tras inicialización
-            setTimeout(() => {
-                try { state.dashboardMap.invalidateSize(); } catch (e) {}
-            }, 150);
             console.log('🗺️ Mapa del dashboard inicializado correctamente');
         } catch (error) {
             console.error('❌ Error inicializando mapa del dashboard:', error);
@@ -2367,18 +2274,6 @@ function loadSampleData() {
         if (tableSort) {
             tableSort.addEventListener('change', sortAlertsTable);
         }
-
-        // Ajustar mapas al cambiar tamaño de ventana o layout
-        let resizeTimer = null;
-        window.addEventListener('resize', function() {
-            if (resizeTimer) clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(() => {
-                try {
-                    if (state.map) state.map.invalidateSize();
-                    if (state.dashboardMap) state.dashboardMap.invalidateSize();
-                } catch (e) {}
-            }, 100);
-        });
     }
 
     // Funciones de estadísticas detalladas

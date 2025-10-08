@@ -7,8 +7,6 @@ import os
 
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.gzip import GZipMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, JSONResponse
@@ -20,16 +18,6 @@ from contextlib import asynccontextmanager, suppress
 from models import *
 from database import Database
 from websocket_manager import WebSocketManager, heartbeat_task
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives import serialization
-import base64
-import json
-
-try:
-    from pywebpush import webpush, WebPushException
-    PYWEBPUSH_AVAILABLE = True
-except Exception:
-    PYWEBPUSH_AVAILABLE = False
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -64,31 +52,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Compresión de respuestas grandes
-app.add_middleware(GZipMiddleware, minimum_size=500)
-
-# Cacheo agresivo para assets estáticos y control fino para SW/manifest
-class StaticCacheMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        response = await call_next(request)
-        path = request.url.path
-        try:
-            if path.startswith("/static/"):
-                # Cache fuerte para assets estáticos (CSS/JS/imagenes)
-                response.headers["Cache-Control"] = "public, max-age=604800, immutable"
-            elif path == "/manifest.webmanifest":
-                # Manifest debe actualizarse con frecuencia
-                response.headers["Cache-Control"] = "no-cache"
-            elif path == "/sw.js":
-                # Service Worker debe actualizarse inmediatamente
-                response.headers["Cache-Control"] = "no-cache"
-        except Exception:
-            # En caso de respuestas sin headers mutables, ignorar
-            pass
-        return response
-
-app.add_middleware(StaticCacheMiddleware)
 
 # Inicializar componentes
 db = Database()
@@ -132,85 +95,6 @@ def verify_web_auth(request: Request) -> str:
     except JWTError:
         raise HTTPException(status_code=401, detail="Token inválido")
 
-# =============================
-# VAPID keys (Web Push)
-# =============================
-
-def _b64url(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).decode('utf-8').rstrip('=')
-
-def load_or_generate_vapid_keys():
-    path = os.getenv("ALERTARAVEN_VAPID_PATH", "vapid_keys.json")
-    if os.path.exists(path):
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                obj = json.load(f)
-                priv_pem = obj.get('private_key_pem')
-                if priv_pem:
-                    private_key = serialization.load_pem_private_key(priv_pem.encode('utf-8'), password=None)
-                    public_key_bytes = private_key.public_key().public_bytes(
-                        serialization.Encoding.X962,
-                        serialization.PublicFormat.UncompressedPoint
-                    )
-                    return {
-                        'private_key': private_key,
-                        'private_key_pem': priv_pem,
-                        'public_key_b64': _b64url(public_key_bytes),
-                        'subject': os.getenv('ALERTARAVEN_VAPID_SUBJECT', 'mailto:admin@alertaraven.local')
-                    }
-        except Exception as e:
-            logger.warning(f"No se pudo cargar VAPID desde archivo: {e}")
-    # Generate new keys
-    private_key = ec.generate_private_key(ec.SECP256R1())
-    priv_pem = private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption()
-    ).decode('utf-8')
-    public_key_bytes = private_key.public_key().public_bytes(
-        serialization.Encoding.X962,
-        serialization.PublicFormat.UncompressedPoint
-    )
-    data = {
-        'private_key_pem': priv_pem,
-        'public_key_b64': _b64url(public_key_bytes),
-        'subject': os.getenv('ALERTARAVEN_VAPID_SUBJECT', 'mailto:admin@alertaraven.local')
-    }
-    try:
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(data, f)
-    except Exception as e:
-        logger.warning(f"No se pudo guardar VAPID en archivo: {e}")
-    return {
-        'private_key': private_key,
-        'private_key_pem': priv_pem,
-        'public_key_b64': data['public_key_b64'],
-        'subject': data['subject']
-    }
-
-VAPID = load_or_generate_vapid_keys()
-
-async def send_push_to_all(payload: Dict[str, Any]):
-    """Envía una notificación push a todas las suscripciones almacenadas"""
-    if not PYWEBPUSH_AVAILABLE:
-        logger.warning("pywebpush no está disponible; no se enviarán push.")
-        return
-    subs = await db.get_push_subscriptions()
-    for sub in subs:
-        try:
-            webpush(
-                subscription_info={
-                    "endpoint": sub["endpoint"],
-                    "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]}
-                },
-                data=json.dumps(payload),
-                vapid_private_key=VAPID['private_key_pem'],
-                vapid_claims={"sub": VAPID['subject']}
-            )
-            logger.info(f"Push enviado a {sub['endpoint']}")
-        except Exception as e:
-            logger.error(f"Error enviando push a {sub['endpoint']}: {e}")
-
 # Modelos de datos para la API
 class LocationData(BaseModel):
     latitude: float = Field(..., description="Latitud de la ubicación")
@@ -232,6 +116,10 @@ class EmergencyContact(BaseModel):
     phone: str = Field(..., description="Número de teléfono")
     relationship: Optional[str] = Field(None, description="Relación con el usuario")
     is_primary: bool = Field(False, description="Si es contacto primario")
+
+class DeviceContactsResponse(BaseModel):
+    device_id: str
+    contacts: List[EmergencyContact]
 
 class AccidentEventData(BaseModel):
     accident_type: str = Field(..., description="Tipo de accidente")
@@ -308,15 +196,20 @@ async def health_check():
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=503, detail="Service unavailable")
 
-@app.post("/api/v1/emergency-alert-debug")
-async def receive_emergency_alert_debug(request_data: dict):
+@app.post("/api/v1/emergency-alert-debug", response_model=AlertResponse)
+async def receive_emergency_alert_debug(alert_request: EmergencyAlertRequest):
     """
-    Endpoint temporal para debugging - recibe cualquier JSON y lo registra
+    Endpoint de depuración: acepta el mismo payload que la app móvil
+    y devuelve un AlertResponse completo sin persistir datos.
     """
     logger.info(f"=== DEBUG ENDPOINT ===")
-    logger.info(f"Datos recibidos (raw): {request_data}")
-    logger.info(f"Tipo de datos: {type(request_data)}")
-    return {"status": "received", "message": "Datos registrados para debugging"}
+    logger.info(f"Datos recibidos (debug): {alert_request.dict()}")
+    return AlertResponse(
+        alert_id=str(uuid4()),
+        status="received",
+        message="Datos registrados para debugging",
+        timestamp=datetime.now()
+    )
 
 @app.post("/api/v1/emergency-alert", response_model=AlertResponse)
 async def receive_emergency_alert(
@@ -386,16 +279,6 @@ async def receive_emergency_alert(
             "timestamp": alert.timestamp.isoformat(),
             "location": alert_request.accident_event.location_data.dict() if alert_request.accident_event.location_data else None
         })
-
-        # Enviar notificación push a suscriptores (en background)
-        push_payload = {
-            "title": "Nueva alerta",
-            "body": f"Tipo: {alert_request.accident_event.accident_type} | Confianza: {int(alert_request.accident_event.confidence * 100)}%",
-            "url": "/alerts-page",
-            "alert_id": alert_id,
-            "tag": "alertaraven-alert"
-        }
-        background_tasks.add_task(send_push_to_all, push_payload)
         
         logger.info(f"Alerta procesada exitosamente. ID: {alert_id}")
         
@@ -428,11 +311,15 @@ async def get_alert_status(alert_id: str):
             raise HTTPException(status_code=404, detail="Alerta no encontrada")
         
         return {
-            "alert_id": alert_id,
-            "status": alert.status.value,
-            "timestamp": alert.timestamp,
-            "accident_type": alert.accident_type.value,
-            "confidence": alert.confidence
+            "alert_id": alert.alert_id,
+            "status": alert.status.value if hasattr(alert.status, "value") else str(alert.status),
+            "device_id": alert.device_id,
+            "created_at": alert.created_at,
+            "updated_at": alert.updated_at,
+            "accident_type": alert.accident_type.value if hasattr(alert.accident_type, "value") else str(alert.accident_type),
+            "confidence": alert.confidence,
+            "location_data": alert.location_data,
+            "emergency_contacts_count": len(alert.emergency_contacts or [])
         }
     except HTTPException:
         raise
@@ -462,17 +349,17 @@ async def get_alerts(
         return {
             "alerts": [
                 {
-                    "alert_id": alert.alert_id,
-                    "device_id": alert.device_id,
-                    "user_id": alert.user_id,
-                    "accident_type": alert.accident_type.value,
-                    "status": alert.status.value,
-                    "confidence": alert.confidence,
-                    "timestamp": alert.timestamp,
-                    "created_at": alert.created_at,
-                    "location_data": alert.location_data
+                    "alert_id": a.alert_id,
+                    "status": a.status.value if hasattr(a.status, "value") else str(a.status),
+                    "device_id": a.device_id,
+                    "created_at": a.created_at,
+                    "updated_at": a.updated_at,
+                    "accident_type": a.accident_type.value if hasattr(a.accident_type, "value") else str(a.accident_type),
+                    "confidence": a.confidence,
+                    "location_data": a.location_data,
+                    "emergency_contacts_count": len(a.emergency_contacts or [])
                 }
-                for alert in alerts
+                for a in alerts
             ],
             "pagination": {
                 "limit": limit,
@@ -592,8 +479,16 @@ async def list_sensor_events(
     offset: int = Query(0)
 ):
     try:
-        events = await db.get_sensor_events(label=label, device_id=device_id, start=start, end=end, limit=limit, offset=offset)
-        return {"items": events, "pagination": {"limit": limit, "offset": offset, "total": len(events)}}
+        rows = await db.get_sensor_events(label=label, device_id=device_id, start=start, end=end, limit=limit, offset=offset)
+        items = [
+            {
+                "event_id": r.get("event_id"),
+                "ok": True,
+                "message": r.get("label")
+            }
+            for r in rows
+        ]
+        return {"events": items, "pagination": {"limit": limit, "offset": offset, "total": len(rows)}}
     except Exception as e:
         logger.error(f"Error listando sensor events: {e}")
         raise HTTPException(status_code=500, detail="Error obteniendo eventos de sensores")
@@ -629,6 +524,15 @@ async def export_sensor_events_csv(
 
 # Configurar archivos estáticos
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# PWA: servir manifest y service worker desde la raíz para mayor alcance
+@app.get("/manifest.webmanifest")
+async def pwa_manifest():
+    return FileResponse("static/manifest.webmanifest", media_type="application/manifest+json")
+
+@app.get("/service-worker.js")
+async def pwa_service_worker():
+    return FileResponse("static/service-worker.js", media_type="application/javascript")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -717,53 +621,6 @@ async def system_page():
     """Página del sistema"""
     return FileResponse("static/index.html")
 
-# PWA assets
-@app.get("/manifest.webmanifest")
-async def manifest_file():
-    return FileResponse("static/manifest.webmanifest", media_type="application/manifest+json")
-
-@app.get("/sw.js")
-async def service_worker_file():
-    return FileResponse("static/sw.js", media_type="application/javascript")
-
-# =============================
-# Push Notifications API
-# =============================
-
-@app.get("/api/push/vapid-public-key")
-async def get_vapid_public_key():
-    """Devuelve la clave pública VAPID para el navegador"""
-    return {"key": VAPID['public_key_b64']}
-
-@app.post("/api/push/subscribe")
-async def subscribe_push(payload: PushSubscriptionPayload):
-    """Recibe y almacena una suscripción push del navegador"""
-    try:
-        keys = payload.keys or {}
-        sub_id = await db.save_push_subscription(
-            endpoint=payload.endpoint,
-            p256dh=keys.get('p256dh'),
-            auth=keys.get('auth'),
-            device_id=payload.device_id
-        )
-        return {"status": "ok", "id": sub_id}
-    except Exception as e:
-        logger.error(f"Error registrando suscripción push: {e}")
-        raise HTTPException(status_code=400, detail="No se pudo registrar la suscripción")
-
-@app.post("/api/push/test")
-async def send_test_push(request: PushNotificationRequest):
-    """Envía una notificación de prueba a todas las suscripciones"""
-    payload = {
-        "title": request.title,
-        "body": request.body,
-        "url": request.url,
-        "alert_id": request.alert_id,
-        "tag": "alertaraven-test"
-    }
-    await send_push_to_all(payload)
-    return {"status": "sent"}
-
     
 
 @app.get("/api/alerts", response_model=List[Dict[str, Any]])
@@ -776,8 +633,7 @@ async def get_alerts(
     """Obtener lista de alertas con filtros opcionales"""
     try:
         alerts = await db.get_alerts(status=status, accident_type=accident_type, limit=limit, offset=offset)
-        # Convertir modelos a dict para cumplir con response_model=List[Dict[str, Any]]
-        return [a.dict() for a in alerts]
+        return alerts
     except Exception as e:
         logger.error(f"Error obteniendo alertas: {e}")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
@@ -903,7 +759,17 @@ async def update_alert_status_endpoint(alert_id: str, request: dict):
         # Notificar cambio de estado via WebSocket
         await websocket_manager.notify_alert_status_change(alert_id, "manual", new_status.lower(), None)
         
-        return {"message": "Estado actualizado exitosamente", "alert_id": alert_id, "new_status": new_status}
+        return {
+            "alert_id": updated_alert.get("alert_id"),
+            "status": updated_alert.get("status"),
+            "device_id": updated_alert.get("device_id"),
+            "created_at": updated_alert.get("created_at"),
+            "updated_at": updated_alert.get("updated_at"),
+            "accident_type": updated_alert.get("accident_type"),
+            "confidence": updated_alert.get("confidence"),
+            "location_data": updated_alert.get("location_data"),
+            "emergency_contacts_count": len(updated_alert.get("emergency_contacts") or [])
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -914,7 +780,7 @@ async def update_alert_status_endpoint(alert_id: str, request: dict):
 # Endpoints de contactos (sincronización móvil)
 # ==========================
 
-@app.get("/api/v1/contacts/{device_id}", response_model=List[EmergencyContact])
+@app.get("/api/v1/contacts/{device_id}", response_model=DeviceContactsResponse)
 async def get_device_contacts(
     device_id: str,
     api_key: str = Depends(verify_api_key)
@@ -928,12 +794,12 @@ async def get_device_contacts(
             "relationship": c.get("relationship"),
             "is_primary": c.get("is_primary", False)
         }) for c in contacts]
-        return api_contacts
+        return {"device_id": device_id, "contacts": api_contacts}
     except Exception as e:
         logger.error(f"Error obteniendo contactos para {device_id}: {e}")
         raise HTTPException(status_code=500, detail="Error obteniendo contactos")
 
-@app.put("/api/v1/contacts/{device_id}", response_model=List[EmergencyContact])
+@app.put("/api/v1/contacts/{device_id}", response_model=DeviceContactsResponse)
 async def replace_device_contacts(
     device_id: str,
     contacts: List[EmergencyContact],
@@ -958,7 +824,7 @@ async def replace_device_contacts(
             "relationship": c.get("relationship"),
             "is_primary": c.get("is_primary", False)
         }) for c in stored]
-        return api_contacts
+        return {"device_id": device_id, "contacts": api_contacts}
     except Exception as e:
         logger.error(f"Error reemplazando contactos para {device_id}: {e}")
         raise HTTPException(status_code=500, detail="Error guardando contactos")

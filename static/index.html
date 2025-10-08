@@ -6,8 +6,7 @@
     <title>AlertaRaven - Dashboard de Monitoreo</title>
     <link rel="stylesheet" href="/static/styles.css">
     <link rel="manifest" href="/manifest.webmanifest">
-    <meta name="theme-color" content="#0f1c2e">
-    <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
+    <meta name="theme-color" content="#0ea5e9">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
@@ -44,14 +43,14 @@
     <script src="/static/components-loader.js"></script>
     <script src="/static/app.js"></script>
     <script>
-      // Registro del Service Worker
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js', { scope: '/' })
-            .then(reg => console.log('✅ Service Worker registrado:', reg.scope))
-            .catch(err => console.error('❌ Error registrando Service Worker:', err));
-        });
-      }
+        // Registro de Service Worker para PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(function(reg) { console.log('✅ Service Worker registrado', reg.scope); })
+                    .catch(function(err) { console.error('❌ Error registrando SW', err); });
+            });
+        }
     </script>
-  </body>
+</body>
 </html>

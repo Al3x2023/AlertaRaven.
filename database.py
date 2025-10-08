@@ -5,7 +5,6 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from models import EmergencyAlert, AlertStatus, AccidentType, DeviceInfo, NotificationLog, SensorEvent, SensorEventType
 import logging
-import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -15,26 +14,9 @@ class Database:
     def __init__(self, db_path: str = "alertas.db"):
         self.db_path = db_path
     
-    def _connect(self):
-        """Devuelve una conexión Async para usar con 'async with' (sin await aquí)"""
-        return aiosqlite.connect(self.db_path)
-
-    async def _apply_pragmas(self, conn):
-        """Aplica PRAGMAs de rendimiento tras entrar en la conexión"""
-        try:
-            await conn.execute("PRAGMA journal_mode=WAL")
-            await conn.execute("PRAGMA synchronous=NORMAL")
-            await conn.execute("PRAGMA temp_store=MEMORY")
-            await conn.execute("PRAGMA cache_size=-20000")  # ~20MB
-            await conn.execute("PRAGMA foreign_keys=ON")
-        except Exception:
-            # Ignorar errores de PRAGMA para compatibilidad
-            pass
-    
     async def init_db(self):
         """Inicializa las tablas de la base de datos"""
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
+        async with aiosqlite.connect(self.db_path) as db:
             # Tabla de alertas de emergencia
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS emergency_alerts (
@@ -136,28 +118,12 @@ class Database:
             except Exception:
                 pass
 
-            # Tabla de suscripciones push para notificaciones (PWA)
-            await db.execute(
-                """
-                CREATE TABLE IF NOT EXISTS push_subscriptions (
-                    id TEXT PRIMARY KEY,
-                    endpoint TEXT UNIQUE NOT NULL,
-                    p256dh TEXT NOT NULL,
-                    auth TEXT NOT NULL,
-                    device_id TEXT,
-                    created_at DATETIME NOT NULL
-                )
-                """
-            )
-            await db.execute("CREATE INDEX IF NOT EXISTS idx_push_endpoint ON push_subscriptions(endpoint)")
-
             await db.commit()
             logger.info("Base de datos inicializada correctamente")
     
     async def save_alert(self, alert: EmergencyAlert) -> str:
         """Guarda una alerta de emergencia en la base de datos"""
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
+        async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 INSERT INTO emergency_alerts (
                     alert_id, device_id, user_id, accident_type, timestamp,
@@ -188,8 +154,7 @@ class Database:
     
     async def get_alert(self, alert_id: str) -> Optional[EmergencyAlert]:
         """Obtiene una alerta por su ID"""
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM emergency_alerts WHERE alert_id = ?", 
@@ -201,12 +166,11 @@ class Database:
                 return None
     
     async def get_alerts(
-        self,
-        limit: int = 50,
+        self, 
+        limit: int = 50, 
         offset: int = 0,
         device_id: Optional[str] = None,
-        status: Optional[str] = None,
-        accident_type: Optional[str] = None,
+        status: Optional[str] = None
     ) -> List[EmergencyAlert]:
         """Obtiene lista de alertas con filtros opcionales"""
         query = "SELECT * FROM emergency_alerts WHERE 1=1"
@@ -218,17 +182,12 @@ class Database:
         
         if status:
             query += " AND status = ?"
-            params.append(status.upper())
-
-        if accident_type:
-            query += " AND accident_type = ?"
-            params.append(accident_type.upper())
+            params.append(status)
         
         query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(query, params) as cursor:
                 rows = await cursor.fetchall()
@@ -236,8 +195,7 @@ class Database:
     
     async def update_alert_status(self, alert_id: str, status: AlertStatus):
         """Actualiza el estado de una alerta"""
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
+        async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 UPDATE emergency_alerts 
                 SET status = ?, updated_at = ? 
@@ -248,8 +206,7 @@ class Database:
     
     async def save_device_info(self, device_info: DeviceInfo):
         """Guarda o actualiza información del dispositivo"""
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
+        async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 INSERT OR REPLACE INTO devices (
                     device_id, user_id, device_model, os_version, 
@@ -268,8 +225,7 @@ class Database:
     
     async def log_notification(self, notification_log: NotificationLog):
         """Registra un log de notificación"""
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
+        async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 INSERT INTO notification_logs (
                     log_id, alert_id, notification_type, recipient,
@@ -288,8 +244,7 @@ class Database:
 
     async def get_contacts(self, device_id: str) -> List[Dict[str, Any]]:
         """Obtiene los contactos de emergencia asociados a un dispositivo"""
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT name, phone, relationship, is_primary, updated_at FROM device_contacts WHERE device_id = ? ORDER BY is_primary DESC, name ASC",
@@ -309,8 +264,7 @@ class Database:
 
     async def replace_contacts(self, device_id: str, contacts: List[Dict[str, Any]]) -> int:
         """Reemplaza los contactos de emergencia para un dispositivo"""
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
+        async with aiosqlite.connect(self.db_path) as db:
             await db.execute("DELETE FROM device_contacts WHERE device_id = ?", (device_id,))
             count = 0
             now = datetime.now().isoformat()
@@ -336,8 +290,7 @@ class Database:
 
     async def get_alert_statistics(self) -> Dict[str, Any]:
         """Obtiene estadísticas de alertas"""
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
+        async with aiosqlite.connect(self.db_path) as db:
             # Total de alertas
             async with db.execute("SELECT COUNT(*) FROM emergency_alerts") as cursor:
                 total_alerts = (await cursor.fetchone())[0]
@@ -386,8 +339,7 @@ class Database:
     async def health_check(self) -> bool:
         """Verifica la salud de la base de datos"""
         try:
-            async with self._connect() as db:
-                await self._apply_pragmas(db)
+            async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("SELECT 1")
                 return True
         except Exception as e:
@@ -404,8 +356,7 @@ class Database:
     # ==========================
 
     async def save_sensor_event(self, event: SensorEvent) -> str:
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
+        async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 """
                 INSERT INTO sensor_events (
@@ -436,63 +387,6 @@ class Database:
             logger.info(f"SensorEvent guardado: {event.event_id}")
             return event.event_id
 
-    # ==========================
-    # Suscripciones Push (PWA)
-    # ==========================
-
-    async def save_push_subscription(self, endpoint: str, p256dh: str, auth: str, device_id: Optional[str] = None) -> str:
-        """Guarda o actualiza una suscripción push"""
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
-            sub_id = str(uuid.uuid4())
-            now = datetime.now().isoformat()
-            try:
-                await db.execute(
-                    """
-                    INSERT INTO push_subscriptions (id, endpoint, p256dh, auth, device_id, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(endpoint) DO UPDATE SET
-                        p256dh=excluded.p256dh,
-                        auth=excluded.auth,
-                        device_id=excluded.device_id
-                    """,
-                    (sub_id, endpoint, p256dh, auth, device_id, now)
-                )
-                await db.commit()
-                logger.info(f"Suscripción push guardada: {endpoint}")
-                return sub_id
-            except Exception as e:
-                logger.error(f"Error guardando suscripción push: {e}")
-                raise
-
-    async def remove_push_subscription(self, endpoint: str) -> int:
-        """Elimina una suscripción push por endpoint"""
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
-            await db.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
-            await db.commit()
-            logger.info(f"Suscripción push eliminada: {endpoint}")
-            return 1
-
-    async def get_push_subscriptions(self) -> List[Dict[str, Any]]:
-        """Obtiene todas las suscripciones push"""
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT id, endpoint, p256dh, auth, device_id, created_at FROM push_subscriptions") as cursor:
-                rows = await cursor.fetchall()
-                return [
-                    {
-                        "id": row["id"],
-                        "endpoint": row["endpoint"],
-                        "p256dh": row["p256dh"],
-                        "auth": row["auth"],
-                        "device_id": row["device_id"],
-                        "created_at": row["created_at"],
-                    }
-                    for row in rows
-                ]
-
     async def get_sensor_events(
         self,
         label: Optional[str] = None,
@@ -521,8 +415,7 @@ class Database:
         query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(query, params) as cursor:
                 rows = await cursor.fetchall()
@@ -547,8 +440,7 @@ class Database:
 
     async def get_sensor_event_summary(self) -> Dict[str, Any]:
         """Obtiene resumen de eventos para métricas del dashboard"""
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             # Totales
             async with db.execute("SELECT COUNT(*) as total FROM sensor_events") as c:
@@ -589,8 +481,7 @@ class Database:
 
     async def get_sensor_event_confusion(self) -> List[Dict[str, Any]]:
         """Devuelve matriz de confusión agregada label vs predicted_label"""
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 """
@@ -607,12 +498,32 @@ class Database:
                     "count": row["cnt"],
                 } for row in rows]
     
-    # Eliminada la segunda definición duplicada de get_alerts para evitar conflictos de firma
+    async def get_alerts(self, status: str = None, accident_type: str = None, limit: int = 50, offset: int = 0):
+        """Obtiene lista de alertas con filtros opcionales"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            
+            query = "SELECT * FROM emergency_alerts WHERE 1=1"
+            params = []
+            
+            if status:
+                query += " AND status = ?"
+                params.append(status.upper())
+            
+            if accident_type:
+                query += " AND accident_type = ?"
+                params.append(accident_type.upper())
+            
+            query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+            
+            async with db.execute(query, params) as cursor:
+                rows = await cursor.fetchall()
+                return [self._row_to_dict(row) for row in rows]
     
     async def get_alert_by_id(self, alert_id: str):
         """Obtiene una alerta específica por ID"""
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM emergency_alerts WHERE alert_id = ?", 
@@ -625,8 +536,7 @@ class Database:
     
     async def get_statistics(self):
         """Obtiene estadísticas del sistema"""
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
+        async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             
             # Total de alertas
@@ -682,8 +592,7 @@ class Database:
             # Si es un string u otro tipo, convertir a string y mayúsculas
             status_value = str(new_status).upper()
             
-        async with self._connect() as db:
-            await self._apply_pragmas(db)
+        async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 "UPDATE emergency_alerts SET status = ?, updated_at = ? WHERE alert_id = ?",
                 (status_value, datetime.now().isoformat(), alert_id)
@@ -713,18 +622,6 @@ class Database:
     
     def _row_to_alert(self, row) -> EmergencyAlert:
         """Convierte una fila de la base de datos a un objeto EmergencyAlert"""
-        def _coerce_status(s: str) -> AlertStatus:
-            try:
-                return AlertStatus(s)
-            except ValueError:
-                mapping = {
-                    "IN_PROGRESS": AlertStatus.PROCESSING,
-                    "PENDING": AlertStatus.PENDING_REVIEW,
-                    "CANCELLED": AlertStatus.FAILED,
-                    "ERROR": AlertStatus.FAILED,
-                }
-                return mapping.get(s, AlertStatus.FAILED)
-
         return EmergencyAlert(
             alert_id=row['alert_id'],
             device_id=row['device_id'],
@@ -737,7 +634,7 @@ class Database:
             location_data=json.loads(row['location_data']) if row['location_data'] else None,
             medical_info=json.loads(row['medical_info']) if row['medical_info'] else None,
             emergency_contacts=json.loads(row['emergency_contacts']) if row['emergency_contacts'] else [],
-            status=_coerce_status(row['status']),
+            status=AlertStatus(row['status']),
             created_at=datetime.fromisoformat(row['created_at']),
             updated_at=datetime.fromisoformat(row['updated_at']),
             additional_data=json.loads(row['additional_data']) if row['additional_data'] else None
