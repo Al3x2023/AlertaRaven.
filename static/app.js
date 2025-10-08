@@ -211,6 +211,19 @@ const AlertaRavenApp = (function() {
         
         // Cargar datos específicos de la sección
         loadSectionData(section);
+
+        // Asegurar que los mapas recalculen su tamaño cuando la sección se muestra
+        try {
+            if (section === 'map' && state.map && typeof state.map.invalidateSize === 'function') {
+                // Invalida el tamaño tras pintar la sección
+                setTimeout(() => state.map.invalidateSize(), 0);
+            }
+            if (section === 'dashboard' && state.dashboardMap && typeof state.dashboardMap.invalidateSize === 'function') {
+                setTimeout(() => state.dashboardMap.invalidateSize(), 0);
+            }
+        } catch (err) {
+            console.warn('⚠️ Error al invalidar tamaño del mapa:', err);
+        }
     }
 
     function loadSectionData(section) {
@@ -1336,8 +1349,23 @@ function loadSampleData() {
     // Funciones de filtrado por zona
     function toggleLocationFilter() {
         const panel = document.getElementById('location-filter-panel');
-        if (panel) {
-            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        if (!panel) {
+            console.warn('⚠️ Panel de filtro por zona no encontrado');
+            showNotification('⚠️ No se encontró el panel de filtro', 'warning');
+            return;
+        }
+        const currentDisplay = window.getComputedStyle(panel).display;
+        const willShow = (currentDisplay === 'none');
+        panel.style.display = willShow ? 'block' : 'none';
+
+        // Si el usuario espera que este botón active el filtro,
+        // iniciamos la solicitud de ubicación al mostrar el panel.
+        if (willShow) {
+            try {
+                enableLocationFilter();
+            } catch (e) {
+                console.warn('No se pudo iniciar geolocalización automática:', e);
+            }
         }
     }
 
@@ -1489,13 +1517,20 @@ function loadSampleData() {
         const userLng = state.locationFilter.userLocation.lng;
         const radiusKm = state.locationFilter.radius;
         
-        // Filtrar alertas por distancia
+        // Filtrar alertas por distancia (acepta dos formas de datos)
         const filteredAlerts = state.currentAlerts.filter(alert => {
-            if (!alert.latitude || !alert.longitude) return false;
-            
+            const lat = (alert.latitude !== undefined && alert.latitude !== null)
+                ? alert.latitude
+                : (alert.location_data && alert.location_data.latitude);
+            const lng = (alert.longitude !== undefined && alert.longitude !== null)
+                ? alert.longitude
+                : (alert.location_data && alert.location_data.longitude);
+
+            if (lat === undefined || lat === null || lng === undefined || lng === null) return false;
+
             const distance = calculateDistance(
                 userLat, userLng,
-                alert.latitude, alert.longitude
+                lat, lng
             );
             
             return distance <= radiusKm;
@@ -1531,10 +1566,17 @@ function loadSampleData() {
             }
         });
         
-        // Agregar marcadores de alertas filtradas
+        // Agregar marcadores de alertas filtradas (acepta dos formas de datos)
         alerts.forEach(alert => {
-            if (alert.latitude && alert.longitude) {
-                const marker = L.marker([alert.latitude, alert.longitude], {
+            const lat = (alert.latitude !== undefined && alert.latitude !== null)
+                ? alert.latitude
+                : (alert.location_data && alert.location_data.latitude);
+            const lng = (alert.longitude !== undefined && alert.longitude !== null)
+                ? alert.longitude
+                : (alert.location_data && alert.location_data.longitude);
+
+            if (lat && lng) {
+                const marker = L.marker([lat, lng], {
                     icon: getAlertIcon(alert.severity)
                 }).addTo(state.map);
                 
@@ -2274,6 +2316,20 @@ function loadSampleData() {
         if (tableSort) {
             tableSort.addEventListener('change', sortAlertsTable);
         }
+
+        // Ajustar mapas al cambiar el tamaño de la ventana
+        window.addEventListener('resize', function() {
+            try {
+                if (state.map && typeof state.map.invalidateSize === 'function') {
+                    state.map.invalidateSize();
+                }
+                if (state.dashboardMap && typeof state.dashboardMap.invalidateSize === 'function') {
+                    state.dashboardMap.invalidateSize();
+                }
+            } catch (err) {
+                console.warn('⚠️ Error al invalidar tamaño de los mapas en resize:', err);
+            }
+        });
     }
 
     // Funciones de estadísticas detalladas
@@ -2725,6 +2781,9 @@ Reporte generado por AlertaRaven
 })();
 
 // Variable global para verificar carga
+// Exponer API pública en window para uso desde atributos inline
+window.AlertaRavenApp = AlertaRavenApp;
+
 window.componentsLoaded = false;
 document.addEventListener('componentsLoaded', function() {
     window.componentsLoaded = true;

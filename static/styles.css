@@ -1019,6 +1019,13 @@ body {
     position: relative;
 }
 
+/* Contenedores de Leaflet deben tener altura explícita */
+#alerts-map,
+#dashboard-map {
+    height: 100%;
+    min-height: 420px;
+}
+
 .map-controls-overlay {
     position: absolute;
     top: var(--space-md);

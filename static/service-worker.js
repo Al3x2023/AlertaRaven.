@@ -1,4 +1,4 @@
-const CACHE_NAME = 'alertaraven-v1';
+const CACHE_NAME = 'alertaraven-v2';
 const OFFLINE_URLS = [
   '/',
   '/dashboard',
@@ -56,6 +56,20 @@ self.addEventListener('fetch', (event) => {
 
   if (url.pathname.startsWith('/api/')) {
     // Network-first para API
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // En desarrollo, forzar network-first para archivos críticos
+  if (url.pathname === '/static/app.js' || url.pathname === '/static/styles.css') {
     event.respondWith(
       fetch(request)
         .then((response) => {
