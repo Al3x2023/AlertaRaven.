@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from models import EmergencyAlert, AlertStatus, AccidentType, DeviceInfo, NotificationLog, SensorEvent, SensorEventType
 import logging
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,21 @@ class Database:
                 await db.execute("ALTER TABLE sensor_events ADD COLUMN prediction_confidence REAL")
             except Exception:
                 pass
+
+            # Tabla de suscripciones push para notificaciones (PWA)
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS push_subscriptions (
+                    id TEXT PRIMARY KEY,
+                    endpoint TEXT UNIQUE NOT NULL,
+                    p256dh TEXT NOT NULL,
+                    auth TEXT NOT NULL,
+                    device_id TEXT,
+                    created_at DATETIME NOT NULL
+                )
+                """
+            )
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_push_endpoint ON push_subscriptions(endpoint)")
 
             await db.commit()
             logger.info("Base de datos inicializada correctamente")
@@ -386,6 +402,60 @@ class Database:
             await db.commit()
             logger.info(f"SensorEvent guardado: {event.event_id}")
             return event.event_id
+
+    # ==========================
+    # Suscripciones Push (PWA)
+    # ==========================
+
+    async def save_push_subscription(self, endpoint: str, p256dh: str, auth: str, device_id: Optional[str] = None) -> str:
+        """Guarda o actualiza una suscripción push"""
+        async with aiosqlite.connect(self.db_path) as db:
+            sub_id = str(uuid.uuid4())
+            now = datetime.now().isoformat()
+            try:
+                await db.execute(
+                    """
+                    INSERT INTO push_subscriptions (id, endpoint, p256dh, auth, device_id, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(endpoint) DO UPDATE SET
+                        p256dh=excluded.p256dh,
+                        auth=excluded.auth,
+                        device_id=excluded.device_id
+                    """,
+                    (sub_id, endpoint, p256dh, auth, device_id, now)
+                )
+                await db.commit()
+                logger.info(f"Suscripción push guardada: {endpoint}")
+                return sub_id
+            except Exception as e:
+                logger.error(f"Error guardando suscripción push: {e}")
+                raise
+
+    async def remove_push_subscription(self, endpoint: str) -> int:
+        """Elimina una suscripción push por endpoint"""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
+            await db.commit()
+            logger.info(f"Suscripción push eliminada: {endpoint}")
+            return 1
+
+    async def get_push_subscriptions(self) -> List[Dict[str, Any]]:
+        """Obtiene todas las suscripciones push"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT id, endpoint, p256dh, auth, device_id, created_at FROM push_subscriptions") as cursor:
+                rows = await cursor.fetchall()
+                return [
+                    {
+                        "id": row["id"],
+                        "endpoint": row["endpoint"],
+                        "p256dh": row["p256dh"],
+                        "auth": row["auth"],
+                        "device_id": row["device_id"],
+                        "created_at": row["created_at"],
+                    }
+                    for row in rows
+                ]
 
     async def get_sensor_events(
         self,

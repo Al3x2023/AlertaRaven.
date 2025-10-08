@@ -121,3 +121,16 @@ class NotificationLog(BaseModel):
     status: str  # SENT, FAILED, DELIVERED
     timestamp: datetime = Field(default_factory=datetime.now)
     error_message: Optional[str] = None
+
+class PushSubscriptionPayload(BaseModel):
+    """Payload de suscripción push del navegador (PushManager.subscribe)"""
+    endpoint: str
+    keys: Dict[str, str]
+    device_id: Optional[str] = None
+
+class PushNotificationRequest(BaseModel):
+    """Solicitud para enviar una notificación push"""
+    title: Optional[str] = 'AlertaRaven'
+    body: Optional[str] = 'Tienes una nueva alerta'
+    url: Optional[str] = '/dashboard'
+    alert_id: Optional[str] = None

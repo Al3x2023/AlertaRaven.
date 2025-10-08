@@ -116,6 +116,7 @@ const AlertaRavenApp = (function() {
         initializeSystemPanel();
         
         startPeriodicUpdates();
+        initPushNotifications();
         
         state.componentsReady = true;
         console.log('✅ AlertaRaven App inicializada correctamente');
@@ -141,6 +142,84 @@ const AlertaRavenApp = (function() {
         }
         
         return true;
+    }
+
+    // =============================
+    // Notificaciones Push (PWA)
+    // =============================
+    function urlBase64ToUint8Array(base64String) {
+        const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+        const base64 = (base64String + padding)
+            .replace(/-/g, '+')
+            .replace(/_/g, '/');
+        const rawData = window.atob(base64);
+        const outputArray = new Uint8Array(rawData.length);
+        for (let i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i);
+        }
+        return outputArray;
+    }
+
+    function arrayBufferToBase64Url(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        const base64 = window.btoa(binary);
+        return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    async function initPushNotifications() {
+        try {
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                console.warn('Push/ServiceWorker no soportado en este navegador');
+                return;
+            }
+
+            // Solicitar permiso de notificación
+            let permission = Notification.permission;
+            if (permission !== 'granted') {
+                permission = await Notification.requestPermission();
+            }
+            if (permission !== 'granted') {
+                console.warn('Permiso de notificaciones no concedido');
+                return;
+            }
+
+            const registration = await navigator.serviceWorker.ready;
+            let subscription = await registration.pushManager.getSubscription();
+
+            // Obtener clave pública VAPID del servidor
+            const resp = await fetch('/api/push/vapid-public-key');
+            const data = await resp.json();
+            const appServerKey = urlBase64ToUint8Array(data.key);
+
+            if (!subscription) {
+                subscription = await registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: appServerKey
+                });
+            }
+
+            // Enviar suscripción al backend
+            const payload = {
+                endpoint: subscription.endpoint,
+                keys: {
+                    p256dh: arrayBufferToBase64Url(subscription.getKey('p256dh')),
+                    auth: arrayBufferToBase64Url(subscription.getKey('auth'))
+                }
+            };
+            await fetch('/api/push/subscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            console.log('✅ Suscripción push registrada correctamente');
+        } catch (err) {
+            console.error('❌ Error inicializando notificaciones push:', err);
+        }
     }
 
     // Configuración de navegación
@@ -224,7 +303,15 @@ const AlertaRavenApp = (function() {
                 loadAlertsTable();
                 break;
             case 'map':
-                loadMapData();
+                // Inicializar si no existe y ajustar tamaño tras mostrar
+                if (!state.map) {
+                    initializeMap();
+                } else {
+                    loadMapData();
+                }
+                setTimeout(() => {
+                    try { state.map && state.map.invalidateSize(); } catch (e) {}
+                }, 100);
                 break;
             case 'statistics':
                 loadStatisticsData();
@@ -1161,6 +1248,10 @@ function loadSampleData() {
             }).addTo(state.map);
 
             updateMapMarkers();
+            // Ajuste de tamaño tras inicialización para evitar cortes
+            setTimeout(() => {
+                try { state.map.invalidateSize(); } catch (e) {}
+            }, 150);
             console.log('🗺️ Mapa inicializado correctamente');
         } catch (error) {
             console.error('❌ Error inicializando mapa:', error);
@@ -1562,6 +1653,10 @@ function loadSampleData() {
             }).addTo(state.dashboardMap);
 
             updateDashboardMapMarkers();
+            // Ajuste de tamaño tras inicialización
+            setTimeout(() => {
+                try { state.dashboardMap.invalidateSize(); } catch (e) {}
+            }, 150);
             console.log('🗺️ Mapa del dashboard inicializado correctamente');
         } catch (error) {
             console.error('❌ Error inicializando mapa del dashboard:', error);
@@ -2252,6 +2347,18 @@ function loadSampleData() {
         if (tableSort) {
             tableSort.addEventListener('change', sortAlertsTable);
         }
+
+        // Ajustar mapas al cambiar tamaño de ventana o layout
+        let resizeTimer = null;
+        window.addEventListener('resize', function() {
+            if (resizeTimer) clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                try {
+                    if (state.map) state.map.invalidateSize();
+                    if (state.dashboardMap) state.dashboardMap.invalidateSize();
+                } catch (e) {}
+            }, 100);
+        });
     }
 
     // Funciones de estadísticas detalladas

@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlertaRaven - Dashboard de Monitoreo</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#0f1c2e">
+    <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
@@ -40,5 +43,15 @@
     <!-- Cargador de componentes -->
     <script src="/static/components-loader.js"></script>
     <script src="/static/app.js"></script>
-</body>
+    <script>
+      // Registro del Service Worker
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('✅ Service Worker registrado:', reg.scope))
+            .catch(err => console.error('❌ Error registrando Service Worker:', err));
+        });
+      }
+    </script>
+  </body>
 </html>

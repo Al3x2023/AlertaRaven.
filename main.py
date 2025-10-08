@@ -18,6 +18,16 @@ from contextlib import asynccontextmanager, suppress
 from models import *
 from database import Database
 from websocket_manager import WebSocketManager, heartbeat_task
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import serialization
+import base64
+import json
+
+try:
+    from pywebpush import webpush, WebPushException
+    PYWEBPUSH_AVAILABLE = True
+except Exception:
+    PYWEBPUSH_AVAILABLE = False
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -94,6 +104,85 @@ def verify_web_auth(request: Request) -> str:
         return payload.get("sub", "")
     except JWTError:
         raise HTTPException(status_code=401, detail="Token inválido")
+
+# =============================
+# VAPID keys (Web Push)
+# =============================
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode('utf-8').rstrip('=')
+
+def load_or_generate_vapid_keys():
+    path = os.getenv("ALERTARAVEN_VAPID_PATH", "vapid_keys.json")
+    if os.path.exists(path):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                obj = json.load(f)
+                priv_pem = obj.get('private_key_pem')
+                if priv_pem:
+                    private_key = serialization.load_pem_private_key(priv_pem.encode('utf-8'), password=None)
+                    public_key_bytes = private_key.public_key().public_bytes(
+                        serialization.Encoding.X962,
+                        serialization.PublicFormat.UncompressedPoint
+                    )
+                    return {
+                        'private_key': private_key,
+                        'private_key_pem': priv_pem,
+                        'public_key_b64': _b64url(public_key_bytes),
+                        'subject': os.getenv('ALERTARAVEN_VAPID_SUBJECT', 'mailto:admin@alertaraven.local')
+                    }
+        except Exception as e:
+            logger.warning(f"No se pudo cargar VAPID desde archivo: {e}")
+    # Generate new keys
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    priv_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    ).decode('utf-8')
+    public_key_bytes = private_key.public_key().public_bytes(
+        serialization.Encoding.X962,
+        serialization.PublicFormat.UncompressedPoint
+    )
+    data = {
+        'private_key_pem': priv_pem,
+        'public_key_b64': _b64url(public_key_bytes),
+        'subject': os.getenv('ALERTARAVEN_VAPID_SUBJECT', 'mailto:admin@alertaraven.local')
+    }
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data, f)
+    except Exception as e:
+        logger.warning(f"No se pudo guardar VAPID en archivo: {e}")
+    return {
+        'private_key': private_key,
+        'private_key_pem': priv_pem,
+        'public_key_b64': data['public_key_b64'],
+        'subject': data['subject']
+    }
+
+VAPID = load_or_generate_vapid_keys()
+
+async def send_push_to_all(payload: Dict[str, Any]):
+    """Envía una notificación push a todas las suscripciones almacenadas"""
+    if not PYWEBPUSH_AVAILABLE:
+        logger.warning("pywebpush no está disponible; no se enviarán push.")
+        return
+    subs = await db.get_push_subscriptions()
+    for sub in subs:
+        try:
+            webpush(
+                subscription_info={
+                    "endpoint": sub["endpoint"],
+                    "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]}
+                },
+                data=json.dumps(payload),
+                vapid_private_key=VAPID['private_key_pem'],
+                vapid_claims={"sub": VAPID['subject']}
+            )
+            logger.info(f"Push enviado a {sub['endpoint']}")
+        except Exception as e:
+            logger.error(f"Error enviando push a {sub['endpoint']}: {e}")
 
 # Modelos de datos para la API
 class LocationData(BaseModel):
@@ -270,6 +359,16 @@ async def receive_emergency_alert(
             "timestamp": alert.timestamp.isoformat(),
             "location": alert_request.accident_event.location_data.dict() if alert_request.accident_event.location_data else None
         })
+
+        # Enviar notificación push a suscriptores (en background)
+        push_payload = {
+            "title": "Nueva alerta",
+            "body": f"Tipo: {alert_request.accident_event.accident_type} | Confianza: {int(alert_request.accident_event.confidence * 100)}%",
+            "url": "/alerts-page",
+            "alert_id": alert_id,
+            "tag": "alertaraven-alert"
+        }
+        background_tasks.add_task(send_push_to_all, push_payload)
         
         logger.info(f"Alerta procesada exitosamente. ID: {alert_id}")
         
@@ -590,6 +689,53 @@ async def statistics_page():
 async def system_page():
     """Página del sistema"""
     return FileResponse("static/index.html")
+
+# PWA assets
+@app.get("/manifest.webmanifest")
+async def manifest_file():
+    return FileResponse("static/manifest.webmanifest", media_type="application/manifest+json")
+
+@app.get("/sw.js")
+async def service_worker_file():
+    return FileResponse("static/sw.js", media_type="application/javascript")
+
+# =============================
+# Push Notifications API
+# =============================
+
+@app.get("/api/push/vapid-public-key")
+async def get_vapid_public_key():
+    """Devuelve la clave pública VAPID para el navegador"""
+    return {"key": VAPID['public_key_b64']}
+
+@app.post("/api/push/subscribe")
+async def subscribe_push(payload: PushSubscriptionPayload):
+    """Recibe y almacena una suscripción push del navegador"""
+    try:
+        keys = payload.keys or {}
+        sub_id = await db.save_push_subscription(
+            endpoint=payload.endpoint,
+            p256dh=keys.get('p256dh'),
+            auth=keys.get('auth'),
+            device_id=payload.device_id
+        )
+        return {"status": "ok", "id": sub_id}
+    except Exception as e:
+        logger.error(f"Error registrando suscripción push: {e}")
+        raise HTTPException(status_code=400, detail="No se pudo registrar la suscripción")
+
+@app.post("/api/push/test")
+async def send_test_push(request: PushNotificationRequest):
+    """Envía una notificación de prueba a todas las suscripciones"""
+    payload = {
+        "title": request.title,
+        "body": request.body,
+        "url": request.url,
+        "alert_id": request.alert_id,
+        "tag": "alertaraven-test"
+    }
+    await send_push_to_all(payload)
+    return {"status": "sent"}
 
     
 

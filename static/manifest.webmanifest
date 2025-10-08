@@ -1,0 +1,24 @@
+{
+  "name": "AlertaRaven",
+  "short_name": "Raven",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f1c2e",
+  "theme_color": "#0f1c2e",
+  "description": "Dashboard de monitoreo y alertas en tiempo real.",
+  "icons": [
+    {
+      "src": "/static/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icons/maskable_icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
