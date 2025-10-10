@@ -18,24 +18,49 @@ from contextlib import asynccontextmanager, suppress
 from models import *
 from database import Database
 from websocket_manager import WebSocketManager, heartbeat_task
+from ml import RFAccidentClassifier
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Configuración de tareas periódicas
+METRICS_SNAPSHOT_INTERVAL = int(os.getenv("METRICS_SNAPSHOT_INTERVAL", "3600"))  # 1 hora por defecto
+DEFAULT_MODEL_VERSION = os.getenv("MODEL_VERSION", None)
+ML_MODEL_DIR = os.getenv("ML_MODEL_DIR", "models")
+ML_MODEL_PATH = os.getenv("ML_MODEL_PATH", os.path.join(ML_MODEL_DIR, "random_forest.pkl"))
+ML_META_PATH = os.getenv("ML_META_PATH", os.path.join(ML_MODEL_DIR, "random_forest_meta.json"))
+ACCIDENT_CONFIDENCE_THRESHOLD = float(os.getenv("ACCIDENT_CONFIDENCE_THRESHOLD", "0.7"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Inicializar la base de datos y tareas de background
     await db.init_db()
     hb_task = asyncio.create_task(heartbeat_task())
+    # Programar snapshots automáticos de métricas
+    metrics_task = asyncio.create_task(model_metrics_snapshot_task(METRICS_SNAPSHOT_INTERVAL, DEFAULT_MODEL_VERSION))
+    # Intentar cargar modelo ML desde disco
+    try:
+        if os.path.exists(ML_MODEL_PATH):
+            rf_classifier.load(ML_MODEL_PATH, ML_META_PATH)
+            logger.info("Modelo RandomForest cargado correctamente")
+        else:
+            logger.info("No se encontró modelo RandomForest en disco, se entrenará cuando se solicite")
+        # Aplicar threshold desde entorno si procede
+        rf_classifier.configure(confidence_threshold=ACCIDENT_CONFIDENCE_THRESHOLD)
+    except Exception as e:
+        logger.error(f"Error cargando modelo ML: {e}")
     try:
         yield
     finally:
         await db.close()
         hb_task.cancel()
+        metrics_task.cancel()
         # Suprimir CancelledError al cerrar la tarea
         with suppress(asyncio.CancelledError):
             await hb_task
+        with suppress(asyncio.CancelledError):
+            await metrics_task
 
 app = FastAPI(
     title="AlertaRaven API",
@@ -56,6 +81,7 @@ app.add_middleware(
 # Inicializar componentes
 db = Database()
 websocket_manager = WebSocketManager()
+rf_classifier = RFAccidentClassifier()
 
 # Configuración de autenticación
 security = HTTPBearer()
@@ -68,6 +94,62 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(sec
     if credentials.credentials not in VALID_API_KEYS:
         raise HTTPException(status_code=401, detail="API key inválida")
     return credentials.credentials
+
+
+# ================================
+# Tarea periódica: snapshots de métricas
+# ================================
+async def model_metrics_snapshot_task(interval_seconds: int = 3600, model_version: Optional[str] = None):
+    """Toma snapshots automáticos de métricas del modelo cada `interval_seconds`"""
+    while True:
+        try:
+            # Obtener datos de confusión actuales
+            confusion_rows = await db.get_sensor_event_confusion()
+            if not confusion_rows:
+                logger.info("No hay datos de predicción para snapshot de métricas; esperando próximo ciclo")
+                await asyncio.sleep(interval_seconds)
+                continue
+
+            labels = set(r["label"] for r in confusion_rows)
+            predicted = set(r["predicted_label"] for r in confusion_rows)
+            classes = sorted(list(labels.union(predicted)))
+
+            matrix = {c: {p: 0 for p in classes} for c in classes}
+            for r in confusion_rows:
+                matrix[r["label"]][r["predicted_label"]] = r["count"]
+
+            total_tp = 0
+            total_fp = 0
+            total_fn = 0
+            for c in classes:
+                tp = matrix.get(c, {}).get(c, 0)
+                fp = sum(matrix[l][c] for l in classes if l != c)
+                fn = sum(matrix[c][p] for p in classes if p != c)
+                total_tp += tp
+                total_fp += fp
+                total_fn += fn
+
+            micro_precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0.0
+            micro_recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0.0
+            micro_f1 = (2 * micro_precision * micro_recall / (micro_precision + micro_recall)) if (micro_precision + micro_recall) > 0 else 0.0
+
+            metrics_payload = {
+                "available": True,
+                "classes": classes,
+                "confusion_matrix": matrix,
+                "overall": {
+                    "precision": round(micro_precision, 4),
+                    "recall": round(micro_recall, 4),
+                    "f1": round(micro_f1, 4),
+                }
+            }
+
+            snapshot_id = await db.save_model_metrics_snapshot(metrics_payload, model_version)
+            logger.info(f"Snapshot automático de métricas creado (ID={snapshot_id})")
+        except Exception as e:
+            logger.error(f"Error en tarea de snapshot de métricas: {e}")
+        finally:
+            await asyncio.sleep(interval_seconds)
 
 # =============================
 # Autenticación para la web (dashboard)
@@ -450,6 +532,29 @@ async def ingest_sensor_event(event_in: SensorEventIn):
             event_in.accel_variance,
             event_in.gyro_variance,
         )
+        # Preparar datos para posible predicción del modelo
+        row_data = {
+            "acceleration_magnitude": event_in.acceleration_magnitude,
+            "gyroscope_magnitude": event_in.gyroscope_magnitude,
+            "accel_variance": event_in.accel_variance,
+            "gyro_variance": event_in.gyro_variance,
+            "accel_jerk": event_in.accel_jerk,
+        }
+        pred_label = event_in.predicted_label
+        pred_conf = event_in.prediction_confidence
+        # Si hay modelo entrenado y no se proporcionó predicted_label, inferirlo
+        if pred_label is None and rf_classifier.is_ready():
+            try:
+                plabel_str, conf = rf_classifier.predict(row_data)
+                # Mapear a enum si posible
+                try:
+                    pred_label = SensorEventType[plabel_str]
+                except Exception:
+                    pred_label = SensorEventType.OTHER
+                pred_conf = conf
+            except Exception as e:
+                logger.error(f"Error en predicción ML: {e}")
+
         event = SensorEvent(
             device_id=event_in.device_id,
             label=label,
@@ -459,8 +564,8 @@ async def ingest_sensor_event(event_in: SensorEventIn):
             accel_variance=event_in.accel_variance,
             gyro_variance=event_in.gyro_variance,
             accel_jerk=event_in.accel_jerk,
-            predicted_label=event_in.predicted_label,
-            prediction_confidence=event_in.prediction_confidence,
+            predicted_label=pred_label,
+            prediction_confidence=pred_conf,
             raw_data=event_in.raw_data,
         )
         event_id = await db.save_sensor_event(event)
@@ -740,6 +845,225 @@ async def model_metrics():
         logger.error(f"Error obteniendo métricas de modelo: {e}")
         raise HTTPException(status_code=500, detail="Error obteniendo métricas de modelo")
 
+@app.post("/api/v1/metrics/model/snapshot")
+async def create_model_metrics_snapshot(model_version: Optional[str] = Query(None, description="Versión del modelo")):
+    """Calcula métricas actuales y guarda un snapshot en la base de datos"""
+    try:
+        # Reutilizar la lógica de model_metrics para calcular métricas
+        confusion_rows = await db.get_sensor_event_confusion()
+        if not confusion_rows:
+            raise HTTPException(status_code=400, detail="No hay datos de predicción (predicted_label) para generar snapshot")
+
+        labels = set(r["label"] for r in confusion_rows)
+        predicted = set(r["predicted_label"] for r in confusion_rows)
+        classes = sorted(list(labels.union(predicted)))
+
+        matrix = {c: {p: 0 for p in classes} for c in classes}
+        for r in confusion_rows:
+            matrix[r["label"]][r["predicted_label"]] = r["count"]
+
+        total_tp = 0
+        total_fp = 0
+        total_fn = 0
+        for c in classes:
+            tp = matrix.get(c, {}).get(c, 0)
+            fp = sum(matrix[l][c] for l in classes if l != c)
+            fn = sum(matrix[c][p] for p in classes if p != c)
+            total_tp += tp
+            total_fp += fp
+            total_fn += fn
+
+        micro_precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0.0
+        micro_recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0.0
+        micro_f1 = (2 * micro_precision * micro_recall / (micro_precision + micro_recall)) if (micro_precision + micro_recall) > 0 else 0.0
+
+        metrics_payload = {
+            "available": True,
+            "classes": classes,
+            "confusion_matrix": matrix,
+            "overall": {
+                "precision": round(micro_precision, 4),
+                "recall": round(micro_recall, 4),
+                "f1": round(micro_f1, 4),
+            }
+        }
+
+        snapshot_id = await db.save_model_metrics_snapshot(metrics_payload, model_version)
+        return {"ok": True, "snapshot_id": snapshot_id, "metrics": metrics_payload}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creando snapshot de métricas: {e}")
+        raise HTTPException(status_code=500, detail="Error creando snapshot de métricas")
+
+# ================================
+# Entrenamiento y predicción ML (RandomForest)
+# ================================
+
+class TrainParams(BaseModel):
+    n_estimators: int = 200
+    max_depth: Optional[int] = None
+    min_samples_leaf: int = 1
+    test_size: float = 0.2
+    random_state: int = 42
+    use_cv: bool = False
+    param_grid: Optional[Dict[str, List[Any]]] = None
+    # Filtros de dataset
+    start: Optional[str] = None
+    end: Optional[str] = None
+    device_id: Optional[str] = None
+    labels_include: Optional[List[str]] = None
+    min_per_class: int = 20
+
+@app.post("/api/v1/model/train/randomforest", dependencies=[Depends(verify_api_key)])
+async def train_random_forest(params: TrainParams):
+    """Entrena un modelo RandomForest con datos de sensor_events y lo persiste."""
+    try:
+        # Obtener datos etiquetados de la BD
+        rows = await db.get_sensor_events(
+            label=None,
+            device_id=params.device_id,
+            start=params.start,
+            end=params.end,
+            limit=100000,
+            offset=0
+        )
+        if not rows:
+            raise HTTPException(status_code=400, detail="No hay eventos de sensores para entrenar")
+
+        # Filtrar filas que tengan 'label'
+        labeled_rows = [r for r in rows if r.get("label")]
+        # Aplicar filtro por etiquetas si se especifica
+        if params.labels_include:
+            allow = set([str(l).upper() for l in params.labels_include])
+            labeled_rows = [r for r in labeled_rows if str(r.get("label")).upper() in allow]
+        if len(labeled_rows) < 5:
+            raise HTTPException(status_code=400, detail="Dataset insuficiente para entrenar (menos de 5 ejemplos)")
+
+        # Reporte de balance por clase
+        from collections import Counter
+        counts = Counter([str(r.get("label")) for r in labeled_rows])
+        total = sum(counts.values())
+        distribution = {k: {"count": v, "percent": round((v / total) * 100, 2)} for k, v in counts.items()}
+        warnings = [f"Clase {k} con {v} muestras (< {params.min_per_class})" for k, v in counts.items() if v < params.min_per_class]
+
+        if params.use_cv:
+            metrics = rf_classifier.train_cv(
+                labeled_rows,
+                param_grid=params.param_grid,
+                cv_splits=3,
+                random_state=params.random_state,
+            )
+        else:
+            metrics = rf_classifier.train(
+                labeled_rows,
+                n_estimators=params.n_estimators,
+                max_depth=params.max_depth,
+                min_samples_leaf=params.min_samples_leaf,
+                test_size=params.test_size,
+                random_state=params.random_state,
+            )
+
+        # Guardar modelo en disco
+        os.makedirs(ML_MODEL_DIR, exist_ok=True)
+        rf_classifier.save(ML_MODEL_PATH, ML_META_PATH)
+
+        return {
+            "ok": True,
+            "message": "Modelo entrenado y guardado",
+            "model_path": ML_MODEL_PATH,
+            "metrics": metrics,
+            "classes": rf_classifier.classes_,
+            "params": rf_classifier.params,
+            "dataset": {
+                "total": total,
+                "by_label": distribution,
+                "warnings": warnings,
+                "filters": {
+                    "start": params.start,
+                    "end": params.end,
+                    "device_id": params.device_id,
+                    "labels_include": params.labels_include,
+                    "min_per_class": params.min_per_class,
+                },
+                "labeled_rows": len(labeled_rows)
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error entrenando modelo: {e}")
+        raise HTTPException(status_code=500, detail="Error entrenando modelo")
+
+class PredictIn(BaseModel):
+    acceleration_magnitude: float
+    gyroscope_magnitude: float
+    accel_variance: Optional[float] = None
+    gyro_variance: Optional[float] = None
+    accel_jerk: Optional[float] = None
+
+@app.post("/api/v1/model/predict")
+async def model_predict(payload: PredictIn):
+    """Predice etiqueta y confianza para características agregadas usando el modelo actual."""
+    try:
+        if not rf_classifier.is_ready():
+            raise HTTPException(status_code=400, detail="Modelo no entrenado/cargado")
+        row = {
+            "acceleration_magnitude": payload.acceleration_magnitude,
+            "gyroscope_magnitude": payload.gyroscope_magnitude,
+            "accel_variance": payload.accel_variance,
+            "gyro_variance": payload.gyro_variance,
+            "accel_jerk": payload.accel_jerk,
+        }
+        label_str, conf = rf_classifier.predict(row)
+        # Mapear a enum si existe
+        display_label = label_str
+        try:
+            display_label = SensorEventType[label_str].value
+        except Exception:
+            pass
+        return {
+            "ok": True,
+            "predicted_label": display_label,
+            "confidence": round(conf, 4),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error en predicción: {e}")
+        raise HTTPException(status_code=500, detail="Error en predicción")
+
+@app.get("/api/v1/model/status")
+async def model_status():
+    """Estado del modelo ML cargado en la API."""
+    try:
+        return {
+            "ready": rf_classifier.is_ready(),
+            "classes": rf_classifier.classes_,
+            "params": rf_classifier.params,
+            "model_path": ML_MODEL_PATH if os.path.exists(ML_MODEL_PATH) else None,
+            "accident_labels": rf_classifier.accident_labels,
+            "confidence_threshold": rf_classifier.confidence_threshold,
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo estado del modelo: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo estado del modelo")
+
+@app.get("/api/v1/metrics/model/history")
+async def get_model_metrics_history(
+    start: Optional[str] = Query(None),
+    end: Optional[str] = Query(None),
+    limit: int = Query(50),
+    model_version: Optional[str] = Query(None)
+):
+    """Obtiene historial de snapshots de métricas"""
+    try:
+        history = await db.get_model_metrics_history(start=start, end=end, limit=limit, model_version=model_version)
+        return {"items": history}
+    except Exception as e:
+        logger.error(f"Error obteniendo historial de métricas: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo historial de métricas")
+
 @app.put("/api/alerts/{alert_id}/status")
 async def update_alert_status_endpoint(alert_id: str, request: dict):
     """Actualizar el estado de una alerta (para paramédicos/aseguradoras)"""
@@ -828,6 +1152,75 @@ async def replace_device_contacts(
     except Exception as e:
         logger.error(f"Error reemplazando contactos para {device_id}: {e}")
         raise HTTPException(status_code=500, detail="Error guardando contactos")
+
+ 
+class ModelConfigIn(BaseModel):
+    accident_labels: Optional[List[str]] = None
+    confidence_threshold: Optional[float] = None
+
+@app.get("/api/v1/model/config")
+async def get_model_config():
+    return {
+        "accident_labels": rf_classifier.accident_labels,
+        "confidence_threshold": rf_classifier.confidence_threshold,
+    }
+
+@app.post("/api/v1/model/config")
+async def set_model_config(cfg: ModelConfigIn):
+    try:
+        rf_classifier.configure(
+            accident_labels=cfg.accident_labels,
+            confidence_threshold=cfg.confidence_threshold,
+        )
+        # Persistir si hay modelo en disco
+        if rf_classifier.is_ready():
+            os.makedirs(ML_MODEL_DIR, exist_ok=True)
+            rf_classifier.save(ML_MODEL_PATH, ML_META_PATH)
+        return {"ok": True, "config": {
+            "accident_labels": rf_classifier.accident_labels,
+            "confidence_threshold": rf_classifier.confidence_threshold,
+        }}
+    except Exception as e:
+        logger.error(f"Error configurando modelo: {e}")
+        raise HTTPException(status_code=500, detail="Error configurando modelo")
+@app.get("/api/v1/model/dataset/summary")
+async def dataset_summary(
+    start: Optional[str] = Query(None),
+    end: Optional[str] = Query(None),
+    device_id: Optional[str] = Query(None),
+    labels_include: Optional[List[str]] = Query(None),
+):
+    """Devuelve distribución por clase del dataset de entrenamiento con filtros opcionales."""
+    try:
+        rows = await db.get_sensor_events(
+            label=None,
+            device_id=device_id,
+            start=start,
+            end=end,
+            limit=100000,
+            offset=0
+        )
+        labeled_rows = [r for r in rows if r.get("label")]
+        if labels_include:
+            allow = set([str(l).upper() for l in labels_include])
+            labeled_rows = [r for r in labeled_rows if str(r.get("label")).upper() in allow]
+        from collections import Counter
+        counts = Counter([str(r.get("label")) for r in labeled_rows])
+        total = sum(counts.values())
+        distribution = {k: {"count": v, "percent": round((v / total) * 100, 2)} for k, v in counts.items()}
+        return {
+            "total": total,
+            "by_label": distribution,
+            "filters": {
+                "start": start,
+                "end": end,
+                "device_id": device_id,
+                "labels_include": labels_include,
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo resumen de dataset: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo resumen de dataset")
 
 if __name__ == "__main__":
     import uvicorn

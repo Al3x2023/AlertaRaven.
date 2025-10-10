@@ -8,3 +8,5 @@ passlib[bcrypt]
 python-dotenv
 httpx
 websockets
+scikit-learn
+joblib
