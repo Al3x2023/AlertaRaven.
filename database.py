@@ -118,6 +118,25 @@ class Database:
             except Exception:
                 pass
 
+            # Tabla de snapshots de métricas de modelo
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS model_metrics_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at DATETIME NOT NULL,
+                    model_version TEXT,
+                    precision REAL,
+                    recall REAL,
+                    f1 REAL,
+                    classes_json TEXT,
+                    confusion_matrix_json TEXT
+                )
+                """
+            )
+
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_model_metrics_created ON model_metrics_snapshots(created_at)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_model_metrics_version ON model_metrics_snapshots(model_version)")
+
             await db.commit()
             logger.info("Base de datos inicializada correctamente")
     
@@ -497,6 +516,81 @@ class Database:
                     "predicted_label": row["predicted_label"],
                     "count": row["cnt"],
                 } for row in rows]
+
+    # ==========================
+    # Snapshots de métricas de modelo
+    # ==========================
+    async def save_model_metrics_snapshot(self, metrics: Dict[str, Any], model_version: Optional[str] = None) -> int:
+        """Guarda un snapshot de métricas del modelo y devuelve su ID"""
+        created_at = datetime.now().isoformat()
+        overall = metrics.get("overall", {})
+        classes_json = json.dumps(metrics.get("classes", []))
+        confusion_json = json.dumps(metrics.get("confusion_matrix", {}))
+
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                """
+                INSERT INTO model_metrics_snapshots (
+                    created_at, model_version, precision, recall, f1,
+                    classes_json, confusion_matrix_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    created_at,
+                    model_version,
+                    overall.get("precision", 0.0),
+                    overall.get("recall", 0.0),
+                    overall.get("f1", 0.0),
+                    classes_json,
+                    confusion_json,
+                )
+            )
+            await db.commit()
+            async with db.execute("SELECT last_insert_rowid()") as c:
+                row = await c.fetchone()
+                snapshot_id = row[0]
+                logger.info(f"Snapshot de métricas guardado: {snapshot_id}")
+                return snapshot_id
+
+    async def get_model_metrics_history(
+        self,
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+        limit: int = 50,
+        model_version: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Obtiene historial de snapshots de métricas del modelo"""
+        query = "SELECT id, created_at, model_version, precision, recall, f1, classes_json, confusion_matrix_json FROM model_metrics_snapshots WHERE 1=1"
+        params: List[Any] = []
+        if start:
+            query += " AND created_at >= ?"
+            params.append(start)
+        if end:
+            query += " AND created_at <= ?"
+            params.append(end)
+        if model_version:
+            query += " AND model_version = ?"
+            params.append(model_version)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(query, params) as c:
+                rows = await c.fetchall()
+                history: List[Dict[str, Any]] = []
+                for row in rows:
+                    history.append({
+                        "id": row["id"],
+                        "created_at": row["created_at"],
+                        "model_version": row["model_version"],
+                        "precision": row["precision"],
+                        "recall": row["recall"],
+                        "f1": row["f1"],
+                        "classes": json.loads(row["classes_json"]) if row["classes_json"] else [],
+                        "confusion_matrix": json.loads(row["confusion_matrix_json"]) if row["confusion_matrix_json"] else {},
+                    })
+                return history
     
     async def get_alerts(self, status: str = None, accident_type: str = None, limit: int = 50, offset: int = 0):
         """Obtiene lista de alertas con filtros opcionales"""

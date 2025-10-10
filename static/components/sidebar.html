@@ -33,5 +33,31 @@
             <i class="fas fa-server"></i>
             <span>Sistema</span>
         </a>
+        <a href="/static/login.html" class="nav-item" id="logout-link">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>Cerrar sesión</span>
+        </a>
     </nav>
+</aside>
+<script>
+(function() {
+  try {
+    var logoutEl = document.getElementById('logout-link');
+    if (logoutEl) {
+      logoutEl.addEventListener('click', function(e) {
+        e.preventDefault();
+        try {
+          localStorage.clear();
+          sessionStorage.clear();
+        } catch (err) {
+          console.warn('No se pudo limpiar el almacenamiento:', err);
+        }
+        window.location.href = '/static/login.html';
+      });
+    }
+  } catch (err) {
+    console.warn('Error inicializando botón de cierre de sesión:', err);
+  }
+})();
+</script>
 </aside>

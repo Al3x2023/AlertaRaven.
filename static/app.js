@@ -57,7 +57,8 @@ const AlertaRavenApp = (function() {
             accidentType: null,
             alertsTrend: null,
             status: null,
-            performance: null
+            performance: null,
+            modelMetricsHistory: null
         },
         map: null,
         dashboardMap: null,
@@ -496,6 +497,7 @@ const AlertaRavenApp = (function() {
         initializeAccidentTypeChart();
         initializeAlertsTrendChart();
         initializeStatusChart();
+        initializeModelMetricsHistoryChart();
     }
 
     function initializeAccidentTypeChart() {
@@ -660,6 +662,114 @@ const AlertaRavenApp = (function() {
         updateElementText('model-f1', formatPercentage(overall.f1));
 
         renderConfusionMatrix(data.classes, data.confusion_matrix);
+    }
+
+    function initializeModelMetricsHistoryChart() {
+        const canvas = document.getElementById('model-metrics-history-chart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        // Destruir gráfico existente si existe
+        if (state.charts.modelMetricsHistory) {
+            state.charts.modelMetricsHistory.destroy();
+        }
+
+        state.charts.modelMetricsHistory = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Precisión',
+                        data: [],
+                        borderColor: '#2ecc71',
+                        backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                        tension: 0.3
+                    },
+                    {
+                        label: 'Recall',
+                        data: [],
+                        borderColor: '#e67e22',
+                        backgroundColor: 'rgba(230, 126, 34, 0.1)',
+                        tension: 0.3
+                    },
+                    {
+                        label: 'F1',
+                        data: [],
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        tension: 0.3
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: true, position: 'top' }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 1,
+                        title: { display: true, text: 'Valor (0-1)' }
+                    }
+                }
+            }
+        });
+    }
+
+    async function loadModelMetricsHistory() {
+        try {
+            const response = await fetch(`/api/v1/metrics/model/history?limit=50`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const payload = await response.json();
+            updateModelMetricsHistoryChart(payload.items || []);
+        } catch (error) {
+            console.error('❌ Error cargando historial de métricas:', error);
+            showNotification('❌ Error cargando histórico de métricas', 'error');
+        }
+    }
+
+    function updateModelMetricsHistoryChart(items) {
+        if (!state.charts.modelMetricsHistory) return;
+        if (!items || items.length === 0) {
+            // limpiar
+            state.charts.modelMetricsHistory.data.labels = [];
+            state.charts.modelMetricsHistory.data.datasets.forEach(d => d.data = []);
+            state.charts.modelMetricsHistory.update('none');
+            return;
+        }
+
+        // Orden cronológico ascendente
+        const sorted = items.slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        const labels = sorted.map(i => new Date(i.created_at).toLocaleString());
+        const precision = sorted.map(i => Number(i.precision || 0));
+        const recall = sorted.map(i => Number(i.recall || 0));
+        const f1 = sorted.map(i => Number(i.f1 || 0));
+
+        state.charts.modelMetricsHistory.data.labels = labels;
+        state.charts.modelMetricsHistory.data.datasets[0].data = precision;
+        state.charts.modelMetricsHistory.data.datasets[1].data = recall;
+        state.charts.modelMetricsHistory.data.datasets[2].data = f1;
+        state.charts.modelMetricsHistory.update();
+    }
+
+    async function createModelMetricsSnapshot() {
+        try {
+            const response = await fetch(`/api/v1/metrics/model/snapshot`, { method: 'POST' });
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.detail || `HTTP ${response.status}`);
+            }
+            const data = await response.json();
+            showNotification('✅ Snapshot de métricas creado', 'success');
+            // recargar histórico
+            loadModelMetricsHistory();
+        } catch (error) {
+            console.error('❌ Error creando snapshot de métricas:', error);
+            showNotification('❌ Error creando snapshot de métricas', 'error');
+        }
     }
 
     function formatPercentage(value) {
@@ -1243,6 +1353,10 @@ function loadSampleData() {
         console.log('📊 Cargando datos de estadísticas');
         initializeStatistics();
         loadDetailedStatistics();
+        // Cargar métricas de modelo para mostrar matriz de confusión y KPIs
+        loadModelMetrics();
+        // Cargar histórico de métricas para gráfico
+        loadModelMetricsHistory();
     }
 
     function refreshMap() {
@@ -2336,6 +2450,7 @@ function loadSampleData() {
     function initializeStatistics() {
         loadDetailedStatistics();
         initializeMonthlyTrendsChart();
+        initializeModelMetricsHistoryChart();
     }
 
     function loadDetailedStatistics() {
@@ -2757,6 +2872,9 @@ Reporte generado por AlertaRaven
         reloadModelMetrics: function() { loadModelMetrics(); },
         refreshRecentAlerts,
         downloadChart,
+        // Métricas de modelo
+        reloadModelMetricsHistory: function() { loadModelMetricsHistory(); },
+        createModelMetricsSnapshot,
         
         // Filtrado por zona
         toggleLocationFilter,

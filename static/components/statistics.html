@@ -7,6 +7,80 @@
             </button>
         </div>
     </div>
+
+    <!-- Métricas de Modelo (ML) -->
+    <div class="metrics-section">
+        <div class="section-header">
+            <h2>Métricas de Modelo</h2>
+            <div class="time-filter">
+                <span id="model-metrics-status" class="status-text">Cargando...</span>
+                <button class="btn-icon" onclick="AlertaRavenApp.reloadModelMetrics()" title="Actualizar métricas">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </div>
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-icon success">
+                    <i class="fas fa-bullseye"></i>
+                </div>
+                <div class="metric-content">
+                    <h4 id="model-precision">--</h4>
+                    <p>Precisión (micro)</p>
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon warning">
+                    <i class="fas fa-eye"></i>
+                </div>
+                <div class="metric-content">
+                    <h4 id="model-recall">--</h4>
+                    <p>Recall (micro)</p>
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-icon active">
+                    <i class="fas fa-equals"></i>
+                </div>
+                <div class="metric-content">
+                    <h4 id="model-f1">--</h4>
+                    <p>F1 (micro)</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="charts-grid">
+            <div class="card chart-card">
+                <div class="card-header">
+                    <h3>Matriz de Confusión</h3>
+                    <div class="card-actions">
+                        <button class="btn-icon" onclick="AlertaRavenApp.reloadModelMetrics()">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-content">
+                    <div id="confusion-matrix-container" class="confusion-matrix"></div>
+                </div>
+            </div>
+            <div class="card chart-card">
+                <div class="card-header">
+                    <h3>Evolución de Métricas</h3>
+                    <div class="card-actions">
+                        <button class="btn-icon" onclick="AlertaRavenApp.reloadModelMetricsHistory()" title="Actualizar histórico">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                        <button class="btn-icon" onclick="AlertaRavenApp.createModelMetricsSnapshot()" title="Guardar snapshot">
+                            <i class="fas fa-save"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-content">
+                    <canvas id="model-metrics-history-chart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
     
     <div class="stats-detailed-grid">
         <div class="card">
