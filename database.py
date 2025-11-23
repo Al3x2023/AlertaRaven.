@@ -1,6 +1,7 @@
 import sqlite3
 import aiosqlite
 import json
+import os
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from models import EmergencyAlert, AlertStatus, AccidentType, DeviceInfo, NotificationLog, SensorEvent, SensorEventType
@@ -11,8 +12,14 @@ logger = logging.getLogger(__name__)
 class Database:
     """Gestor de base de datos para AlertaRaven API"""
     
-    def __init__(self, db_path: str = "alertas.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: Optional[str] = None):
+        # Permitir configurar ruta por variable de entorno DB_PATH
+        resolved_path = db_path or os.getenv("DB_PATH", "alertas.db")
+        # Crear directorio si la ruta incluye carpeta
+        dir_name = os.path.dirname(resolved_path)
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
+        self.db_path = resolved_path
     
     async def init_db(self):
         """Inicializa las tablas de la base de datos"""

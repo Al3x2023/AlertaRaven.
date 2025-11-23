@@ -10,3 +10,4 @@ httpx
 websockets
 scikit-learn
 joblib
+gunicorn
