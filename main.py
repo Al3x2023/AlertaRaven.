@@ -629,6 +629,8 @@ async def export_sensor_events_csv(
 
 # Configurar archivos estáticos
 app.mount("/static", StaticFiles(directory="static"), name="static")
+# Descargas públicas (APK y otros archivos)
+app.mount("/download", StaticFiles(directory="download"), name="download")
 
 # PWA: servir manifest y service worker desde la raíz para mayor alcance
 @app.get("/manifest.webmanifest")
